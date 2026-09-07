@@ -23,26 +23,6 @@ const SERVICES = Object.freeze({
   timeoutMs: 20000,
   cacheMs: 15 * 60 * 1000
 });
-// Tabla aportada por el propietario; se conserva su referencia declarada.
-// Su correspondencia oficial con epi_st de 10_STAX_PA no está verificada:
-// el servicio consultado devolvió S21. No inferir equivalencias con estos códigos.
-const ICGC_SOIL_CROSSWALK = Object.freeze({
-  // Suelos calcáreos.
-  "CL": { types: ["calcareous"], source: "Leyenda ICGC Edafológica 1:250.000" },
-  "CM-ca": { types: ["calcareous"], source: "Leyenda ICGC Edafológica 1:250.000" },
-  "RG-ca": { types: ["calcareous"], source: "Leyenda ICGC Edafológica 1:250.000" },
-  "FL-ca": { types: ["calcareous"], source: "Leyenda ICGC Edafológica 1:250.000" },
-  // Suelos ácidos.
-  "CM-di": { types: ["acidic"], source: "Leyenda ICGC Edafológica 1:250.000" },
-  "LV": { types: ["acidic"], source: "Leyenda ICGC Edafológica 1:250.000" },
-  "PZ": { types: ["acidic"], source: "Leyenda ICGC Edafológica 1:250.000" },
-  "LP-di": { types: ["acidic"], source: "Leyenda ICGC Edafológica 1:250.000" },
-  // Unidades mixtas: ambos tipos según la regla aportada.
-  "FL-eu": { types: ["acidic", "calcareous"], source: "Leyenda ICGC Edafológica 1:250.000" },
-  "CM-eu": { types: ["acidic", "calcareous"], source: "Leyenda ICGC Edafológica 1:250.000" },
-  "ANTH": { types: ["acidic", "calcareous"], source: "Leyenda ICGC Edafológica 1:250.000" },
-  "S21": { types: ["acidic", "calcareous"], source: "Regla del propietario para la unidad S21 del ICGC" }
-});
 const finite = (value) => typeof value === "number" && Number.isFinite(value);
 const sum = (values) => values.reduce((total, value) => total + value, 0);
 
@@ -299,16 +279,16 @@ function normalizeVegetation(payload) {
 
 // Textos editoriales informativos; no son claves de identificación.
 const SEO_DESCRIPTIONS = Object.freeze({
-  "rovello-pinetell": "El Rovelló y el Pinetell destacan por sus sombreros de tonos anaranjados o rojizos y su carne firme. En los pinares de Cataluña suelen aparecer entre acículas y hojarasca, a veces parcialmente ocultos bajo el suelo superficial. Las lluvias de otoño favorecen su aparición cuando la humedad persiste. Son protagonistas de la cocina catalana, especialmente en preparaciones a la brasa y guisos que aprovechan su textura y aroma forestal.",
-  "cep": "El Cep presenta un sombrero pardo, un pie robusto y una superficie de poros bajo el sombrero, en lugar de láminas. Se encuentra en bosques frescos de hayas, robles y coníferas, donde puede quedar disimulado entre hojas y musgo. Su aroma y su carne consistente explican su prestigio gastronómico. Se utiliza en arroces, salsas y guisos, mientras que su versión deshidratada permite incorporar notas intensas a numerosas elaboraciones.",
-  "cama-perdiu": "La Cama de perdiu tiene un sombrero de tonos cobrizos y láminas que descienden por el pie. Su aspecto puede confundirse con el de otras setas, por lo que una descripción breve no basta para identificarla. Habita principalmente en pinares, entre acículas y restos vegetales que dificultan verla. En la tradición culinaria se aprovecha cocinada, a menudo en mezclas de setas, por una textura que complementa arroces y guisos.",
-  "rossinyol": "El Rossinyol llama la atención por sus tonos amarillos y su sombrero irregular, con pliegues que recorren la cara inferior. Suele crecer en rincones frescos de bosques de frondosas, protegido por hojarasca y sombra. Encontrarlo depende de la humedad conservada en el terreno, además de la lluvia reciente. Su aroma delicado y su textura firme lo convierten en una seta apreciada para salteados, salsas y acompañamientos de platos de temporada.",
-  "camagroc": "El Camagroc combina un pequeño sombrero pardo, generalmente embudado, con un pie delgado de color amarillo anaranjado. En los pinares húmedos puede formar grupos entre musgos y acículas, donde su tamaño obliga a observar con atención. Los rincones sombríos ayudan a conservar la humedad que favorece su desarrollo. Es muy apreciado por su aroma y por su versatilidad en arroces, tortillas y salsas; también se utiliza deshidratado en la cocina.",
-  "trompeta-mort": "La Trompeta de la mort presenta una silueta de embudo y tonos oscuros que la camuflan entre las hojas del bosque. Suele aparecer en grupos en ambientes húmedos y umbríos de frondosas, especialmente donde el mantillo conserva frescor. Su nombre popular contrasta con su reconocimiento gastronómico. Tiene un aroma intenso que aporta profundidad a salsas, arroces y guisos, y se emplea también deshidratada como ingrediente aromático en pequeñas cantidades.",
-  "llenega-negra": "La Llenega negra destaca por su sombrero oscuro y viscoso cuando está húmedo, junto con láminas claras y un pie relativamente robusto. Es característica de pinares sobre terrenos calcáreos, donde emerge entre acículas durante los meses frescos de otoño. Puede quedar oculta por restos vegetales y pasar inadvertida a primera vista. Su textura particular tiene un lugar destacado en la cocina catalana, especialmente en guisos y acompañamientos de carnes.",
-  "murgola": "La Múrgola se distingue por un sombrero con cavidades que recuerdan a un panal y una estructura hueca. Aparece en primavera, en ambientes variados según la especie: bosques de ribera, coníferas y algunos terrenos alterados. Su color facilita que pase inadvertida entre hojas y restos vegetales. Es una seta de gran interés gastronómico para salsas y guisos, pero requiere identificación experta y preparación adecuada: nunca debe consumirse cruda.",
-  "fredolic": "El Fredolic es una seta pequeña, de sombrero gris y aspecto finamente fibroso, con láminas claras. Suele aparecer en grupos en pinares durante la parte fría del otoño, a menudo mezclado con acículas que disimulan su presencia. Forma parte de numerosas recetas tradicionales catalanas, desde sopas hasta platos con patata y guisos. Su interés culinario exige una identificación cuidadosa, porque existen otras setas grises con las que puede confundirse.",
-  "ous-reig": "Los Ous de reig reciben su nombre por la envoltura blanquecina que rodea los ejemplares jóvenes. Al desarrollarse muestran un sombrero anaranjado y láminas y pie amarillos. Prefieren ambientes cálidos de bosques de frondosas, como encinares y castañares, donde pueden esconderse bajo la hojarasca. Su carne delicada les otorga gran prestigio culinario. La identificación debe ser experta, especialmente en ejemplares jóvenes, por la existencia de amanitas peligrosas de apariencia confundible."
+  "rovello-pinetell": "El níscalo y el robellón destacan por sus sombreros de tonos anaranjados o rojizos y su carne firme. En los pinares de Cataluña suelen aparecer entre acículas y hojarasca, a veces parcialmente ocultos bajo el suelo superficial. Las lluvias de otoño favorecen su aparición cuando la humedad persiste. Son protagonistas de la cocina catalana, especialmente en preparaciones a la brasa y guisos que aprovechan su textura y aroma forestal.",
+  "cep": "El Boleto presenta un sombrero pardo, un pie robusto y una superficie de poros bajo el sombrero, en lugar de láminas. Se encuentra en bosques frescos de hayas, robles y coníferas, donde puede quedar disimulado entre hojas y musgo. Su aroma y su carne consistente explican su prestigio gastronómico. Se utiliza en arroces, salsas y guisos, mientras que su versión deshidratada permite incorporar notas intensas a numerosas elaboraciones.",
+  "cama-perdiu": "La Pata de perdiz tiene un sombrero de tonos cobrizos y láminas que descienden por el pie. Su aspecto puede confundirse con el de otras setas, por lo que una descripción breve no basta para identificarla. Habita principalmente en pinares, entre acículas y restos vegetales que dificultan verla. En la tradición culinaria se aprovecha cocinada, a menudo en mezclas de setas, por una textura que complementa arroces y guisos.",
+  "rossinyol": "El Rebozuelo llama la atención por sus tonos amarillos y su sombrero irregular, con pliegues que recorren la cara inferior. Suele crecer en rincones frescos de bosques de frondosas, protegido por hojarasca y sombra. Encontrarlo depende de la humedad conservada en el terreno, además de la lluvia reciente. Su aroma delicado y su textura firme lo convierten en una seta apreciada para salteados, salsas y acompañamientos de platos de temporada.",
+  "camagroc": "El Angula de monte combina un pequeño sombrero pardo, generalmente embudado, con un pie delgado de color amarillo anaranjado. En los pinares húmedos puede formar grupos entre musgos y acículas, donde su tamaño obliga a observar con atención. Los rincones sombríos ayudan a conservar la humedad que favorece su desarrollo. Es muy apreciado por su aroma y por su versatilidad en arroces, tortillas y salsas; también se utiliza deshidratado en la cocina.",
+  "trompeta-mort": "La Trompeta de los muertos presenta una silueta de embudo y tonos oscuros que la camuflan entre las hojas del bosque. Suele aparecer en grupos en ambientes húmedos y umbríos de frondosas, especialmente donde el mantillo conserva frescor. Su nombre popular contrasta con su reconocimiento gastronómico. Tiene un aroma intenso que aporta profundidad a salsas, arroces y guisos, y se emplea también deshidratada como ingrediente aromático en pequeñas cantidades.",
+  "llenega-negra": "La Llanega negra destaca por su sombrero oscuro y viscoso cuando está húmedo, junto con láminas claras y un pie relativamente robusto. Es característica de pinares sobre terrenos calcáreos, donde emerge entre acículas durante los meses frescos de otoño. Puede quedar oculta por restos vegetales y pasar inadvertida a primera vista. Su textura particular tiene un lugar destacado en la cocina catalana, especialmente en guisos y acompañamientos de carnes.",
+  "murgola": "La Colmenilla se distingue por un sombrero con cavidades que recuerdan a un panal y una estructura hueca. Aparece en primavera, en ambientes variados según la especie: bosques de ribera, coníferas y algunos terrenos alterados. Su color facilita que pase inadvertida entre hojas y restos vegetales. Es una seta de gran interés gastronómico para salsas y guisos, pero requiere identificación experta y preparación adecuada: nunca debe consumirse cruda.",
+  "fredolic": "El Negrilla es una seta pequeña, de sombrero gris y aspecto finamente fibroso, con láminas claras. Suele aparecer en grupos en pinares durante la parte fría del otoño, a menudo mezclado con acículas que disimulan su presencia. Forma parte de numerosas recetas tradicionales catalanas, desde sopas hasta platos con patata y guisos. Su interés culinario exige una identificación cuidadosa, porque existen otras setas grises con las que puede confundirse.",
+  "ous-reig": "Las oronjas reciben su nombre por la envoltura blanquecina que rodea los ejemplares jóvenes. Al desarrollarse muestran un sombrero anaranjado y láminas y pie amarillos. Prefieren ambientes cálidos de bosques de frondosas, como encinares y castañares, donde pueden esconderse bajo la hojarasca. Su carne delicada les otorga gran prestigio culinario. La identificación debe ser experta, especialmente en ejemplares jóvenes, por la existencia de amanitas peligrosas de apariencia confundible."
 });
 
 function matchVegetation(species, vegetation) {
@@ -365,6 +345,8 @@ async function fetchJson(url, signal, responseType = "json") {
     return responseType === "text" ? await response.text() : await response.json();
   } catch (error) {
     if (controller.signal.aborted && !signal?.aborted) throw new Error("El servicio ha tardado demasiado. Vuelve a consultar el punto.");
+    if (error instanceof TypeError) throw new Error("No se ha podido conectar con el servicio. Comprueba la conexión y vuelve a intentarlo.");
+    if (error instanceof SyntaxError) throw new Error("El servicio devolvió datos ilegibles. Vuelve a intentarlo.");
     throw error;
   } finally {
     clearTimeout(timer);
@@ -413,35 +395,329 @@ function habitatBadgeState(habitat) {
   return { className: "unknown", label: "Hábitat pendiente" };
 }
 
+function geocodingUrl(query, endpoint = "https://nominatim.openstreetmap.org/search") {
+  const url = new URL(endpoint);
+  url.search = new URLSearchParams({ q: query.trim(), format: "jsonv2", limit: 1,
+    countrycodes: "es", viewbox: "0.15,42.9,3.35,40.5", bounded: 1, "accept-language": "ca,es" });
+  return url.toString();
+}
+
+function firstPlace(payload) {
+  if (!Array.isArray(payload)) throw new Error("Respuesta de búsqueda no reconocida.");
+  if (!payload.length) return null;
+  const place = payload[0];
+  const lat = Number(place.lat), lng = Number(place.lon);
+  if (place.lat == null || place.lon == null || !finite(lat) || !finite(lng) || lat < 40.5 || lat > 42.9 || lng < 0.15 || lng > 3.35) {
+    throw new Error("El lugar está fuera del área de consulta de Cataluña.");
+  }
+  return { lat, lng, name: String(place.display_name || "Lugar encontrado") };
+}
+
+function sharedPointFromUrl(href, catalog) {
+  const params = new URL(href).searchParams;
+  if (!["lat", "lng", "species"].some((key) => params.has(key))) return null;
+  const latText = params.get("lat"), lngText = params.get("lng");
+  const lat = Number(latText), lng = Number(lngText), speciesId = params.get("species");
+  if (!latText?.trim() || !lngText?.trim() || !finite(lat) || !finite(lng) || lat < 40.5 || lat > 42.9 || lng < 0.15 || lng > 3.35 || !catalog.some((item) => item.id === speciesId)) {
+    throw new Error("El enlace contiene coordenadas o una especie no válidas.");
+  }
+  return { lat, lng, speciesId };
+}
+
+function pointShareUrl(base, point, speciesId) {
+  const url = new URL(base);
+  if (!["https:", "http:"].includes(url.protocol) || /^(localhost|127\.|\[::1\])/.test(url.hostname)) {
+    throw new Error("Para compartir, abre la web publicada o configura su URL pública en public-site-url de index.html.");
+  }
+  url.username = ""; url.password = ""; url.search = ""; url.hash = "";
+  url.search = new URLSearchParams({ lat: String(point.lat), lng: String(point.lng), species: speciesId });
+  return url.toString();
+}
+
+function whatsappShareUrl(link, speciesName, habitatLabel, level, date) {
+  const levels = { low: "Baja", medium: "Media", high: "Alta", unknown: "Sin evaluar" };
+  const message = `🍄 ¡Mira este punto para buscar setas en Cataluña! Según Buscador de Setas en Cataluña, para ${speciesName}: ${habitatLabel}. Estimación final: ${levels[level] || levels.unknown}${date ? ` (datos hasta ${date})` : ""}. Es orientativo, no garantiza encontrar setas. Consulta el mapa y el calendario aquí: ${link}`;
+  const url = new URL("https://wa.me/");
+  url.searchParams.set("text", message);
+  return url.toString();
+}
+
+const SPECIES_NAMES_ES = Object.freeze({
+  "rovello-pinetell": "Níscalo/Robellón", cep: "Boleto", "cama-perdiu": "Pata de perdiz", rossinyol: "Rebozuelo", camagroc: "Angula de monte", "trompeta-mort": "Trompeta de los muertos", "llenega-negra": "Llanega negra", murgola: "Colmenilla", fredolic: "Negrilla", "ous-reig": "Oronja"
+});
+const SEO_CA = Object.freeze({
+  "rovello-pinetell": "El rovelló i el pinetell destaquen pels barrets de tons ataronjats o rogencs i la carn ferma. A les pinedes de Catalunya solen aparèixer entre agulles i fullaraca, de vegades parcialment amagats sota el sòl superficial. Les pluges de tardor n'afavoreixen l'aparició quan la humitat persisteix. Són protagonistes de la cuina catalana, especialment en preparacions a la brasa i guisats que aprofiten la seva textura i aroma de bosc.",
+  cep: "El cep presenta un barret bru, un peu robust i una superfície de porus sota el barret, en lloc de làmines. Es troba en boscos frescos de faigs, roures i coníferes, on pot quedar dissimulat entre fulles i molsa. L'aroma i la carn consistent expliquen el seu prestigi gastronòmic. Es fa servir en arrossos, salses i guisats, mentre que la versió deshidratada permet incorporar notes intenses a nombroses elaboracions.",
+  "cama-perdiu": "La cama de perdiu té un barret de tons rogencs i làmines que baixen pel peu. El seu aspecte es pot confondre amb el d'altres bolets, de manera que una descripció breu no és suficient per identificar-la. Viu principalment en pinedes, entre agulles i restes vegetals que en dificulten la descoberta. En la tradició culinària s'aprofita cuita, sovint en barreges de bolets, per una textura que complementa arrossos i guisats.",
+  rossinyol: "El rossinyol crida l'atenció pels tons grocs i el barret irregular, amb plecs que recorren la cara inferior. Sol créixer en racons frescos de boscos de frondoses, protegit per la fullaraca i l'ombra. Trobar-lo depèn de la humitat conservada al terreny, a més de la pluja recent. L'aroma delicada i la textura ferma el converteixen en un bolet apreciat per a saltats, salses i acompanyaments de plats de temporada.",
+  camagroc: "El camagroc combina un petit barret bru, generalment en forma d'embut, amb un peu prim de color groc ataronjat. A les pinedes humides pot formar grups entre molses i agulles, on la mida obliga a observar amb atenció. Els racons ombrívols ajuden a conservar la humitat que n'afavoreix el desenvolupament. És molt apreciat per l'aroma i la versatilitat en arrossos, truites i salses; també es fa servir deshidratat a la cuina.",
+  "trompeta-mort": "La trompeta de la mort presenta una silueta d'embut i tons foscos que la camuflen entre les fulles del bosc. Sol aparèixer en grups en ambients humits i ombrívols de frondoses, especialment on la fullaraca conserva la frescor. El nom popular contrasta amb el reconeixement gastronòmic. Té una aroma intensa que aporta profunditat a salses, arrossos i guisats, i també s'empra deshidratada com a ingredient aromàtic en petites quantitats.",
+  "llenega-negra": "La llenega negra destaca pel barret fosc i viscós quan és humit, juntament amb làmines clares i un peu relativament robust. És característica de pinedes sobre terrenys calcaris, on emergeix entre agulles durant els mesos frescos de tardor. Pot quedar amagada per restes vegetals i passar desapercebuda a primera vista. La seva textura particular té un lloc destacat a la cuina catalana, especialment en guisats i acompanyaments de carns.",
+  murgola: "La múrgola es distingeix per un barret amb cavitats que recorden una bresca i una estructura buida. Apareix a la primavera, en ambients variats segons l'espècie: boscos de ribera, coníferes i alguns terrenys alterats. El color facilita que passi desapercebuda entre fulles i restes vegetals. És un bolet de gran interès gastronòmic per a salses i guisats, però requereix identificació experta i preparació adequada: mai no s'ha de consumir cru.",
+  fredolic: "El fredolic és un bolet petit, de barret gris i aspecte finament fibrós, amb làmines clares. Sol aparèixer en grups en pinedes durant la part freda de la tardor, sovint barrejat amb agulles que en dissimulen la presència. Forma part de nombroses receptes tradicionals catalanes, des de sopes fins a plats amb patata i guisats. El seu interès culinari exigeix una identificació acurada, perquè hi ha altres bolets grisos amb els quals es pot confondre.",
+  "ous-reig": "Els ous de reig reben el nom de l'embolcall blanquinós que envolta els exemplars joves. En desenvolupar-se mostren un barret ataronjat i làmines i peu grocs. Prefereixen ambients càlids de boscos de frondoses, com alzinars i castanyedes, on es poden amagar sota la fullaraca. La carn delicada els atorga un gran prestigi culinari. La identificació ha de ser experta, especialment en exemplars joves, per l'existència d'amanites perilloses d'aparença confusible."
+});
+const TRANSLATIONS = Object.freeze({
+  "Buscador de Setas en Cataluña": "Cercador de Bolets a Catalunya",
+  "CATÁLOGO V1 · 10 ESPECIES": "CATÀLEG V1 · 10 ESPÈCIES",
+  "LLUVIA · HÁBITAT · TEMPORADA": "PLUJA · HÀBITAT · TEMPORADA",
+  "Ir al selector de setas": "Ves al selector de bolets",
+  "Selecciona una seta y un punto del mapa para consultar su ventana de humedad.": "Selecciona un bolet i un punt del mapa per consultar-ne la finestra d'humitat.",
+  "Catálogo de especies": "Catàleg d'espècies", "Selección de seta": "Selecció de bolet", "¿Qué seta buscas?": "Quin bolet busques?", "Cargando catálogo…": "Carregant el catàleg…",
+  "Modo oscuro": "Mode fosc", "Modo claro": "Mode clar", "ELIGE UN PUNTO": "TRIA UN PUNT", "Mapa de Cataluña": "Mapa de Catalunya", "Centrar Cataluña": "Centra Catalunya",
+  "Buscar un lugar en Cataluña": "Cerca un lloc a Catalunya", "Buscar lugar": "Cerca un lloc", "Búsqueda:": "Cerca:", "Introduce lugares públicos, no datos personales.": "Introdueix llocs públics, no dades personals.",
+  "Mapa interactivo de Cataluña": "Mapa interactiu de Catalunya", "Cargando mapa…": "Carregant el mapa…", "Estimación meteorológica": "Estimació meteorològica", "Probabilidad meteorológica:": "Probabilitat meteorològica:",
+  "El color evalúa el punto consultado, no todo el bosque. No representa avistamientos.": "El color avalua el punt consultat, no tot el bosc. No representa observacions.",
+  "Latitud": "Latitud", "Longitud": "Longitud", "Consultar punto": "Consulta el punt", "Puedes usar las coordenadas sin interactuar con el mapa. El área de consulta es un encuadre aproximado de Cataluña.": "Pots fer servir les coordenades sense interactuar amb el mapa. L'àrea de consulta és un enquadrament aproximat de Catalunya.",
+  "Ventana óptima de humedad": "Finestra òptima d'humitat", "Terreno": "Terreny", "Baja": "Baixa", "Media": "Mitjana", "Alta": "Alta", "Sin evaluar": "Sense avaluar", "Hábitat pendiente": "Hàbitat pendent", "Hábitat Óptimo": "Hàbitat Òptim", "Hábitat Incompatible": "Hàbitat Incompatible",
+  "Compartir por WhatsApp": "Comparteix per WhatsApp", "Estimación final:": "Estimació final:", "estimación final": "estimació final", "Consulta un punto para analizar las condiciones recientes.": "Consulta un punt per analitzar les condicions recents.",
+  "Historial de condiciones diarias (Últimos 28 días)": "Historial de condicions diàries (Últims 28 dies)", "Consulta un punto para ver los últimos 28 días completos, desde ayer hacia atrás.": "Consulta un punt per veure els últims 28 dies complets, des d'ahir cap enrere.",
+  "Calor / Seco:": "Calor / Sec:", "Seco": "Sec", "Óptimo": "Òptim", "Normal (Gris):": "Normal (Gris):",
+  "Día en el que la lluvia acumulada alcanza el shock que, según el modelo, puede despertar al hongo debajo de la tierra.": "Dia en què la pluja acumulada assoleix el xoc que, segons el model, pot despertar el fong sota terra.",
+  "Alerta. El bosque registró calor (máxima ≥25 °C) o más de 3 días sin al menos 1,5 mm diarios de lluvia, lo que puede retrasar o cancelar la brotada.": "Alerta. El bosc va registrar calor (màxima ≥25 °C) o més de 3 dies sense almenys 1,5 mm diaris de pluja, fet que pot retardar o cancel·lar la brotada.",
+  "¡Día de gloria! Ese día está dentro de la ventana favorable tras la lluvia y presenta condiciones de humedad adecuadas según el modelo. Es una orientación, no una garantía de encontrar setas.": "Dia de glòria! Aquell dia és dins la finestra favorable després de la pluja i presenta condicions d'humitat adequades segons el model. És una orientació, no una garantia de trobar bolets.",
+  "El bosque está en calma: ese día no tiene una señal destacada en el episodio analizado y el hongo puede seguir esperando condiciones favorables.": "El bosc està en calma: aquell dia no té cap senyal destacat en l'episodi analitzat i el fong pot continuar esperant condicions favorables.",
+  "El suelo y los árboles del punto todavía no están verificados.": "El sòl i els arbres del punt encara no estan verificats.",
+  "Características, hábitat y cocina de la seta seleccionada": "Característiques, hàbitat i cuina del bolet seleccionat", "características, hábitat y cocina": "característiques, hàbitat i cuina", "Espacio reservado para publicidad": "Espai reservat per a publicitat", "PUBLICIDAD": "PUBLICITAT", "Espacio reservado": "Espai reservat",
+  "Activa JavaScript para consultar las fichas, las lluvias y el mapa.": "Activa JavaScript per consultar les fitxes, les pluges i el mapa.", "Datos meteorológicos:": "Dades meteorològiques:", "Agregación y análisis propios.": "Agregació i anàlisi pròpies.",
+  "Cómo se calcula y qué falta por verificar": "Com es calcula i què falta verificar",
+  "Estimación orientativa, no una probabilidad estadística ni una identificación para consumo. Los umbrales aportados por el propietario están pendientes de contraste bibliográfico.": "Estimació orientativa, no una probabilitat estadística ni una identificació per al consum. Els llindars aportats pel propietari estan pendents de contrast bibliogràfic.",
+  "Se analizan 28 días completos hasta ayer. El resumen acumula 14 días de lluvia y chubascos, sin nieve. El shock requiere superar el umbral en 48–72 horas; la temporada y la media térmica de tres días limitan el resultado sin borrar el histórico.": "S'analitzen 28 dies complets fins ahir. El resum acumula 14 dies de pluja i ruixats, sense neu. El xoc requereix superar el llindar en 48–72 hores; la temporada i la mitjana tèrmica de tres dies limiten el resultat sense esborrar l'historial.",
+  "La humedad favorable requiere lluvia fina (0,2–5 mm/día) o humedad relativa ≥75 %. Alta exige al menos un 60 % de días favorables en incubación. Cuatro días sin 1,5 mm diarios penalizan; cuatro días sin lluvia con máximas ≥25 °C o más de 60 mm en siete días de incubación detienen el episodio.": "La humitat favorable requereix pluja fina (0,2–5 mm/dia) o humitat relativa ≥75 %. Alta exigeix almenys un 60 % de dies favorables en incubació. Quatre dies sense 1,5 mm diaris penalitzen; quatre dies sense pluja amb màximes ≥25 °C o més de 60 mm en set dies d'incubació aturen l'episodi.",
+  "El cruce de suelo y vegetación es una heurística cartográfica, no una confirmación de árboles ni de setas. La humedad del aire no mide directamente el agua del suelo. Consulta las condiciones locales y respeta el acceso al terreno.": "L'encreuament de sòl i vegetació és una heurística cartogràfica, no una confirmació d'arbres ni de bolets. La humitat de l'aire no mesura directament l'aigua del sòl. Consulta les condicions locals i respecta l'accés al terreny.",
+  "Fuentes:": "Fonts:", "ICGC Suelos": "ICGC Sòls",
+  "Árboles asociados": "Arbres associats", "Suelo": "Sòl", "Temperatura (media de 3 días)": "Temperatura (mitjana de 3 dies)", "Altitud": "Altitud", "Shock hídrico": "Xoc hídric", "Eclosión": "Brotada", "Otros hábitats": "Altres hàbitats", "Más de ": "Més de ", " mm en 48–72 horas": " mm en 48–72 hores", " días después del shock": " dies després del xoc",
+  "Pinos": "Pins", "Hayas": "Faigs", "Robles": "Roures", "Encinas": "Alzines", "Alcornoques": "Sureres", "Fresnos": "Freixes", "Castaños": "Castanyers", "Calcáreo o ácido": "Calcari o àcid", "Calcáreo": "Calcari", "Ácido": "Àcid", "Silíceo / ácido": "Silici / àcid", "Terrenos quemados, según especie": "Terrenys cremats, segons l'espècie",
+  "Septiembre–diciembre": "Setembre–desembre", "Septiembre–noviembre": "Setembre–novembre", "Octubre–diciembre": "Octubre–desembre", "Junio–noviembre": "Juny–novembre", "Octubre–enero": "Octubre–gener", "Marzo–mayo": "Març–maig", "Noviembre–enero": "Novembre–gener", "Agosto–octubre": "Agost–octubre",
+  "Templada": "Temperada", "Frío moderado": "Fred moderat", "Frío severo": "Fred intens", "Primavera / Templado-Fresco": "Primavera / Temperat-fresc", "sin rango numérico definido": "sense rang numèric definit", "(grupo)": "(grup)",
+  "La regla agrupa dos especies; sus preferencias reales pueden diferir.": "La regla agrupa dues espècies; les preferències reals poden diferir.", "Esta ficha se centra en B. edulis; el nombre popular también abarca otros boletos.": "Aquesta fitxa se centra en B. edulis; el nom popular també inclou altres ceps.", "El nombre puede incluir especies próximas de Chroogomphus.": "El nom pot incloure espècies pròximes de Chroogomphus.", "Ficha de un grupo de taxones con ecología variable.": "Fitxa d'un grup de tàxons amb ecologia variable.", "Los enclaves musgosos y umbríos mantienen mejor la humedad.": "Els indrets amb molsa i ombra conserven millor la humitat.", "La regla de suelo es la aportada para este modelo V1.": "La regla de sòl és l'aportada per a aquest model V1.", "La ventana larga requiere consultar más de dos semanas de histórico.": "La finestra llarga requereix consultar més de dues setmanes d'historial.", "Quemados describe un hábitat, no un árbol. No todas las Morchella son pirófilas.": "Cremats descriu un hàbitat, no un arbre. No totes les Morchella són piròfiles.", "Rango de frío aportado: 2–12 °C, ambos extremos incluidos.": "Rang de fred aportat: 2–12 °C, tots dos extrems inclosos.", "Requiere una media estrictamente superior a 20 °C.": "Requereix una mitjana estrictament superior a 20 °C.",
+  "Comprobación del hábitat": "Comprovació de l'hàbitat", "Consultando suelo ICGC…": "Consultant el sòl ICGC…", "Elige un punto para consultar el suelo.": "Tria un punt per consultar el sòl.", "Sin unidad de suelo disponible en este punto.": "Sense unitat de sòl disponible en aquest punt.", "Compatibilidad heurística de suelo y árboles, independiente de la lluvia y la altitud; no confirma presencia de setas.": "Compatibilitat heurística de sòl i arbres, independent de la pluja i l'altitud; no confirma la presència de bolets.",
+  "Dentro del rango habitual": "Dins del rang habitual", "Fuera del rango habitual": "Fora del rang habitual", "Pendiente de verificar": "Pendent de verificar",
+  "Suelo: Óptimo (Terreno adecuado para esta especie)": "Sòl: Òptim (Terreny adequat per a aquesta espècie)", "Suelo: Incompatible (Tipo de terreno no apto)": "Sòl: Incompatible (Tipus de terreny no apte)", "Suelo: Pendiente de verificar (No hay información suficiente del terreno)": "Sòl: Pendent de verificar (No hi ha prou informació del terreny)",
+  "Árboles: Compatibles (Presencia del bosque asociado detectada)": "Arbres: Compatibles (Presència del bosc associat detectada)", "Árboles: Incompatibles (La vegetación de la zona no se asocia con esta seta)": "Arbres: Incompatibles (La vegetació de la zona no s'associa amb aquest bolet)", "Árboles: Pendientes de verificar (No hay información suficiente sobre la cubierta)": "Arbres: Pendents de verificar (No hi ha prou informació sobre la coberta)",
+  "Consultando cubierta ICGC…": "Consultant la coberta ICGC…", "Elige un punto para consultar la cubierta.": "Tria un punt per consultar la coberta.", "Cubierta ICGC 2024:": "Coberta ICGC 2024:", "Sin cubierta disponible en este punto.": "Sense coberta disponible en aquest punt.", "Fuente: ICGC · Cobertes del sòl 2024 · CC BY 4.0": "Font: ICGC · Cobertes del sòl 2024 · CC BY 4.0", "Altitud aproximada del modelo:": "Altitud aproximada del model:", "no disponible": "no disponible",
+  "El clima y el hábitat se muestran por separado. La estimación final y el color del mapa bajan a Baja si el suelo o los árboles son incompatibles. La clasificación es orientativa y no confirma presencia de setas.": "El clima i l'hàbitat es mostren per separat. L'estimació final i el color del mapa baixen a Baixa si el sòl o els arbres són incompatibles. La classificació és orientativa i no confirma la presència de bolets.",
+  " — restricción biológica por hábitat incompatible": " — restricció biològica per hàbitat incompatible", "Punto ": "Punt ", " · Evaluación hasta ": " · Avaluació fins a ", "Lluvia de los últimos 14 días": "Pluja dels últims 14 dies", "Sin shock": "Sense xoc", "Fin del episodio de lluvia inicial": "Final de l'episodi de pluja inicial", "Lluvia:": "Pluja:", "Temperatura media:": "Temperatura mitjana:", "Máxima:": "Màxima:", " · 14/14 días completos. Histórico analizado: 28 días.": " · 14/14 dies complets. Historial analitzat: 28 dies.", "Estimación orientativa, sin garantía de fructificación.": "Estimació orientativa, sense garantia de fructificació.",
+  "Se necesitan 28 días consecutivos completos de lluvia y temperatura.": "Calen 28 dies consecutius complets de pluja i temperatura.", "Episodio cancelado: cuatro días consecutivos sin lluvia y con máximas ≥25 °C.": "Episodi cancel·lat: quatre dies consecutius sense pluja i amb màximes ≥25 °C.", "Episodio detenido: más de 60 mm en siete días de incubación (regla de exceso de agua).": "Episodi aturat: més de 60 mm en set dies d'incubació (regla d'excés d'aigua).", "En incubación: día ": "En incubació: dia ", "; la ventana empieza en el día ": "; la finestra comença el dia ", "Ventana terminada: han pasado ": "Finestra acabada: han passat ", " días desde el shock.": " dies des del xoc.", "Dentro de ventana: día ": "Dins de la finestra: dia ", "Humedad favorable en ": "Humitat favorable en ", " días de incubación.": " dies d'incubació.", "Humedad horaria incompleta: estimación base limitada a Media.": "Humitat horària incompleta: estimació base limitada a Mitjana.", "Suelo seco: más de ": "Sòl sec: més de ", " días completos sin al menos ": " dies complets sense almenys ", " mm/día durante la incubación; penalización de un nivel.": " mm/dia durant la incubació; penalització d'un nivell.", "Criterio térmico cualitativo: no se aplica un umbral numérico no especificado.": "Criteri tèrmic qualitatiu: no s'aplica un llindar numèric no especificat.", "No se detecta un shock superior a ": "No es detecta cap xoc superior a ", "Fuera de temporada: mes actual ": "Fora de temporada: mes actual ", "; meses óptimos: ": "; mesos òptims: ", "Temperatura fuera de rango: media de tres días ": "Temperatura fora de rang: mitjana de tres dies ", ". Requiere ": ". Requereix ", "Restricción biológica: el suelo o la vegetación no son compatibles con esta seta.": "Restricció biològica: el sòl o la vegetació no són compatibles amb aquest bolet.",
+  "Escribe un lugar para buscar.": "Escriu un lloc per cercar.", "Buscando lugar…": "Cercant el lloc…", "Espera un segundo antes de volver a buscar.": "Espera un segon abans de tornar a cercar.", "No se ha encontrado ese lugar en Cataluña. Prueba otro nombre.": "No s'ha trobat aquest lloc a Catalunya. Prova un altre nom.", "No se pudo buscar:": "No s'ha pogut cercar:", "Se ha solicitado abrir WhatsApp con el mensaje preparado. Elige a quién enviarlo.": "S'ha sol·licitat obrir WhatsApp amb el missatge preparat. Tria a qui enviar-lo.", "Selecciona un punto dentro del encuadre de Cataluña.": "Selecciona un punt dins l'enquadrament de Catalunya.", "Consultando 28 días de lluvia, temperatura y humedad…": "Consultant 28 dies de pluja, temperatura i humitat…", "No se puede evaluar el punto:": "No es pot avaluar el punt:", ". Pulsa Consultar punto para reintentar.": ". Prem Consulta el punt per tornar-ho a provar.", "El ICGC no está disponible o no permite esta consulta desde el navegador. El cruce de suelo queda pendiente.": "L'ICGC no està disponible o no permet aquesta consulta des del navegador. L'encreuament de sòl queda pendent.", "No se pudo consultar la cubierta ICGC. Árboles pendientes de verificar; vuelve a consultar el punto.": "No s'ha pogut consultar la coberta ICGC. Arbres pendents de verificar; torna a consultar el punt.",
+  "No se ha podido cargar Leaflet. Puedes consultar las coordenadas y las fichas sin mapa.": "No s'ha pogut carregar Leaflet. Pots consultar les coordenades i les fitxes sense mapa.", "Usar mi ubicación GPS": "Fes servir la meva ubicació GPS", "El GPS requiere HTTPS (o localhost) y un navegador con geolocalización.": "El GPS requereix HTTPS (o localhost) i un navegador amb geolocalització.", "Buscando tu ubicación. Permite el acceso al GPS en el navegador.": "Cercant la teva ubicació. Permet l'accés al GPS al navegador.", " (precisión aproximada: ": " (precisió aproximada: ", "Tu posición GPS": "La teva posició GPS", "Ubicación GPS encontrada": "Ubicació GPS trobada", "Permiso de ubicación denegado. Puedes buscar un lugar o introducir coordenadas.": "Permís d'ubicació denegat. Pots cercar un lloc o introduir coordenades.", "No se pudo obtener tu ubicación. Comprueba el GPS y vuelve a intentarlo.": "No s'ha pogut obtenir la teva ubicació. Comprova el GPS i torna-ho a provar.", "No se han cargado algunas partes del mapa. Puedes usar las coordenadas.": "No s'han carregat algunes parts del mapa. Pots fer servir les coordenades.", "No se ha podido cargar la capa ICGC.": "No s'ha pogut carregar la capa ICGC.", "ICGC 1:250.000: acerca el mapa para ver las unidades de suelo.": "ICGC 1:250.000: apropa el mapa per veure les unitats de sòl.", "Suelos ICGC 1:250.000": "Sòls ICGC 1:250.000", "Suelos 1:250.000": "Sòls 1:250.000",
+  "La respuesta meteorológica tiene un formato o unidades no válidos.": "La resposta meteorològica té un format o unitats no vàlids.", "Histórico incompleto (": "Historial incomplet (", "). No se calcula una estimación con huecos.": "). No es calcula cap estimació amb buits.", "Límite de consultas alcanzado. Inténtalo más tarde.": "Límit de consultes assolit. Torna-ho a provar més tard.", "El servicio responde HTTP ": "El servei respon HTTP ", "El servicio ha tardado demasiado. Vuelve a consultar el punto.": "El servei ha trigat massa. Torna a consultar el punt.", "Respuesta de búsqueda no reconocida.": "Resposta de cerca no reconeguda.", "El lugar está fuera del área de consulta de Cataluña.": "El lloc és fora de l'àrea de consulta de Catalunya.", "Lugar encontrado": "Lloc trobat", "El enlace contiene coordenadas o una especie no válidas.": "L'enllaç conté coordenades o una espècie no vàlides.", "Para compartir, abre la web publicada o configura su URL pública en public-site-url de index.html.": "Per compartir, obre el web publicat o configura'n l'URL públic a public-site-url d'index.html.",
+  "No se ha podido conectar con el servicio. Comprueba la conexión y vuelve a intentarlo.": "No s'ha pogut connectar amb el servei. Comprova la connexió i torna-ho a provar.", "El servicio devolvió datos ilegibles. Vuelve a intentarlo.": "El servei ha retornat dades il·legibles. Torna-ho a provar.",
+  "Bosque de coníferas/pinos": "Bosc de coníferes/pins", "Bosque de frondosas": "Bosc de frondoses", "Terreno agrícola, urbano o prado": "Terreny agrícola, urbà o prat", "Cubierta sin clasificar": "Coberta sense classificar", "Clasificación orientativa:": "Classificació orientativa:", "Mixto (ácido/calcáreo)": "Mixt (àcid/calcari)", "Consultar cartografía original": "Consulta la cartografia original",
+  "Acercar": "Apropa", "Alejar": "Allunya", "Capas del mapa": "Capes del mapa", "colaboradores": "col·laboradors"
+});
+const translationPattern = new RegExp(Object.keys(TRANSLATIONS).sort((a, b) => b.length - a.length).map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g");
+function translateText(text, language) {
+  text = String(text ?? "");
+  if (language === "ca") return text.replace(translationPattern, (match) => TRANSLATIONS[match]);
+  const names = { "El Rovelló y el Pinetell": "El níscalo y el robellón", "Rovelló/Pinetell": "Níscalo/Robellón", "Cama de perdiu": "Pata de perdiz", "Trompeta de la mort": "Trompeta de los muertos", "Llenega negra": "Llanega negra", "Los Ous de reig": "Las oronjas", "Ous de reig": "Oronja", "Cep": "Boleto", "Rossinyol": "Rebozuelo", "Camagroc": "Angula de monte", "Múrgola": "Colmenilla", "Fredolic": "Negrilla" };
+  return text.replace(/El Rovelló y el Pinetell|Rovelló\/Pinetell|Cama de perdiu|Trompeta de la mort|Llenega negra|Los Ous de reig|Ous de reig|Cep|Rossinyol|Camagroc|Múrgola|Fredolic/g, (match) => names[match]);
+}
+function metadataFor(speciesName, place, language) {
+  return language === "ca" ? {
+    title: `Hi ha ${speciesName} a ${place}? Predicció i hàbitat | BoletApp`,
+    description: `Consulta les condicions per a ${speciesName} a ${place}: pluja recent, calendari de 28 dies i compatibilitat del sòl i el bosc. Estimació orientativa de BoletApp.`
+  } : {
+    title: `¿Hay ${speciesName} en ${place}? Predicción y hábitat | BoletApp`,
+    description: `Consulta las condiciones para ${speciesName} en ${place}: lluvia reciente, calendario de 28 días y compatibilidad del suelo y el bosque. Estimación orientativa de BoletApp.`
+  };
+}
+function coverDescription(cover) {
+  const text = cover.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/agric|urban|conreu|cultiu|prat|prado|herbassar|pastur/.test(text)) return "Terreno agrícola, urbano o prado";
+  if (/aciculifolis|conifer|\b(pi|pins|pinassa)\b/.test(text)) return "Bosque de coníferas/pinos";
+  if (/frondos|esclerofil|alzina|roure|faig|castany/.test(text)) return "Bosque de frondosas";
+  return "Cubierta sin clasificar";
+}
+
 function initApp() {
   const $ = (id) => document.getElementById(id);
+  const stored = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
+  const persist = (key, value) => { try { localStorage.setItem(key, value); } catch { /* Preferencias opcionales en navegación privada. */ } };
+  const preferred = new URL(window.location.href).searchParams.get("lang") || stored("boletapp-language");
+  let language = preferred === "ca" ? "ca" : "es";
+  const t = (text) => translateText(text, language);
+  const textSources = new WeakMap();
+  const attributeSources = new WeakMap();
+  function setText(element, source) {
+    element.textContent = t(source);
+    if (element.firstChild) textSources.set(element.firstChild, { source: String(source), rendered: element.textContent });
+  }
+  function localizeTree() {
+    document.documentElement.lang = language;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let text;
+    while ((text = walker.nextNode())) {
+      if (text.parentElement.closest("script, style, #language-select")) continue;
+      const saved = textSources.get(text);
+      const source = saved && text.nodeValue === saved.rendered ? saved.source : text.nodeValue;
+      const rendered = t(source);
+      text.nodeValue = rendered;
+      textSources.set(text, { source, rendered });
+    }
+    document.querySelectorAll("[aria-label], [title], [placeholder]").forEach((element) => {
+      const saved = attributeSources.get(element) || {};
+      for (const name of ["aria-label", "title", "placeholder"]) {
+        if (!element.hasAttribute(name)) continue;
+        const value = element.getAttribute(name);
+        const source = saved[name]?.rendered === value ? saved[name].source : value;
+        const rendered = t(source);
+        element.setAttribute(name, rendered);
+        saved[name] = { source, rendered };
+      }
+      attributeSources.set(element, saved);
+    });
+  }
+  function setTheme(theme) {
+    const dark = theme === "dark";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    $("theme-toggle").setAttribute("aria-pressed", String(dark));
+    setText($("theme-toggle"), dark ? "Modo claro" : "Modo oscuro");
+    document.querySelector('meta[name="theme-color"]').content = dark ? "#1b2022" : "#123e32";
+  }
+  $("theme-toggle").addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    persist("boletapp-theme", next);
+  });
+  setTheme(document.documentElement.dataset.theme);
+  $("language-select").value = language;
+  let initialPoint = null;
+  try { initialPoint = sharedPointFromUrl(window.location.href, MUSHROOMS); }
+  catch (error) { setText($("navigation-status"), error.message); }
   const select = $("species-select");
-  const state = { weather: null, soil: null, soilError: "", vegetation: null, vegetationError: "", point: null, request: 0, controller: null };
+  const state = { weather: null, soil: null, soilError: "", vegetation: null, vegetationError: "", point: null, placeName: "", request: 0, controller: null };
   const cache = new Map();
   let map = null;
   let marker = null;
+  let gpsMarker = null;
+  let gpsButton = null;
+  let gpsPending = false;
+  let gpsAccuracy = "";
+  let navigationId = 0;
+  let searchController = null;
+  let lastSearchAt = 0;
+  const placeCache = new Map();
+
+  function cancelNavigation() {
+    navigationId += 1;
+    searchController?.abort();
+    searchController = null;
+    gpsPending = false;
+    map?.stopLocate();
+    if (gpsButton) gpsButton.disabled = false;
+    $("search-btn").disabled = false;
+    $("search-form").setAttribute("aria-busy", "false");
+  }
+
+  $("search-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const query = $("search-input").value.trim();
+    if (!query) { setText($("navigation-status"), "Escribe un lugar para buscar."); return; }
+    cancelNavigation();
+    const id = navigationId;
+    const key = query.toLocaleLowerCase("ca");
+    $("search-btn").disabled = true;
+    $("search-form").setAttribute("aria-busy", "true");
+    setText($("navigation-status"), "Buscando lugar…");
+    try {
+      let place;
+      if (placeCache.has(key)) place = placeCache.get(key);
+      else {
+        if (Date.now() - lastSearchAt < 1100) throw new Error("Espera un segundo antes de volver a buscar.");
+        lastSearchAt = Date.now();
+        searchController = new AbortController();
+        const endpoint = document.querySelector('meta[name="geocoding-endpoint"]')?.content || "https://nominatim.openstreetmap.org/search";
+        place = firstPlace(await fetchJson(geocodingUrl(query, endpoint), searchController.signal));
+        if (id !== navigationId) return;
+        placeCache.set(key, place);
+        if (placeCache.size > 100) placeCache.delete(placeCache.keys().next().value);
+      }
+      if (id !== navigationId) return;
+      if (!place) { setText($("navigation-status"), "No se ha encontrado ese lugar en Cataluña. Prueba otro nombre."); return; }
+      setText($("navigation-status"), place.name);
+      map?.setView([place.lat, place.lng], 14);
+      consultPoint(place.lat, place.lng, place.name.split(",")[0]);
+    } catch (error) {
+      if (id === navigationId) setText($("navigation-status"), `No se pudo buscar: ${error.message}`);
+    } finally {
+      if (id === navigationId) {
+        $("search-btn").disabled = false;
+        $("search-form").setAttribute("aria-busy", "false");
+      }
+    }
+  });
   const bounds = [[40.5, 0.15], [42.9, 3.35]];
   const names = { low: "Baja", medium: "Media", high: "Alta", unknown: "Sin evaluar" };
   const colors = { low: "#b33f32", medium: "#956000", high: "#19754b", unknown: "#64748b" };
-  const number = (value) => new Intl.NumberFormat("es-ES", { maximumFractionDigits: 1 }).format(value);
+  const number = (value) => new Intl.NumberFormat(language === "ca" ? "ca-ES" : "es-ES", { maximumFractionDigits: 1 }).format(value);
   const node = (tag, text, className) => {
     const item = document.createElement(tag);
-    item.textContent = text;
+    setText(item, text);
     if (className) item.className = className;
     return item;
   };
   const species = () => MUSHROOMS.find((item) => item.id === select.value);
 
+  $("share-whatsapp-btn").addEventListener("click", () => {
+    if (!state.point) return;
+    try {
+      const base = document.querySelector('meta[name="public-site-url"]')?.content.trim() || window.location.href;
+      const sharedUrl = new URL(pointShareUrl(base, state.point, species().id));
+      sharedUrl.searchParams.set("lang", language);
+      const link = sharedUrl.toString();
+      const habitat = compareHabitat(species(), state.soil, state.weather?.elevationM, state.vegetation);
+      const climate = state.weather ? analyzeHumidity(species(), state.weather.days) : { level: "unknown", reasons: [] };
+      const final = applyVegetationPenalty(climate, habitat);
+      const url = language === "ca" ? new URL("https://wa.me/") : new URL(whatsappShareUrl(link, t(species().name), t(habitatBadgeState(habitat).label), final.level, state.weather?.days.at(-1)?.date));
+      if (language === "ca") url.searchParams.set("text", `🍄 Mira aquest punt per buscar bolets a Catalunya! Per a ${species().name}: ${t(habitatBadgeState(habitat).label)}. Estimació final: ${t(names[final.level])}. És orientatiu, no garanteix trobar bolets. Consulta el mapa i el calendari aquí: ${link}`);
+      // Solo prepara el mensaje: el usuario elige destinatario y confirma el envío.
+      window.open(url.toString(), "_blank", "noopener,noreferrer");
+      setText($("share-status"), "Se ha solicitado abrir WhatsApp con el mensaje preparado. Elige a quién enviarlo.");
+    } catch (error) { setText($("share-status"), error.message); }
+  });
+
+  function restoreSharedPoint() {
+    if (!initialPoint) return;
+    map?.setView([initialPoint.lat, initialPoint.lng], 14);
+    consultPoint(initialPoint.lat, initialPoint.lng);
+    initialPoint = null;
+  }
+
   function paint(level, finalLevel = level) {
     $("probability").className = `badge ${level}`;
-    $("probability").textContent = names[level];
-    $("probability").setAttribute("aria-label", `Probabilidad meteorológica: ${names[level]}`);
+    setText($("probability"), names[level]);
+    $("probability").setAttribute("aria-label", t(`Probabilidad meteorológica: ${names[level]}`));
     if (marker) {
       marker.setStyle({ color: colors[finalLevel], fillColor: colors[finalLevel] });
       marker.bindTooltip(node("span", `${species().name}: ${names[finalLevel]} · estimación final`));
     }
   }
 
+  function updateMetadata() {
+    const name = language === "ca" ? species().name : SPECIES_NAMES_ES[species().id];
+    const place = state.placeName || (state.point ? `${state.point.lat.toFixed(4)}, ${state.point.lng.toFixed(4)}` : language === "ca" ? "Catalunya" : "Cataluña");
+    const metadata = metadataFor(name, place, language);
+    document.title = metadata.title;
+    document.querySelector('meta[name="description"]').content = metadata.description;
+  }
+  $("language-select").addEventListener("change", () => {
+    language = $("language-select").value === "ca" ? "ca" : "es";
+    persist("boletapp-language", language);
+    for (const option of select.options) setText(option, MUSHROOMS.find((item) => item.id === option.value).name);
+    renderSpecies();
+    setTheme(document.documentElement.dataset.theme);
+    localizeTree();
+    updateMapLabels();
+  });
+  function updateMapLabels() {
+    for (const [selector, label] of [[".leaflet-control-zoom-in", "Acercar"], [".leaflet-control-zoom-out", "Alejar"], [".leaflet-control-layers-toggle", "Capas del mapa"]]) {
+      const control = document.querySelector(selector);
+      if (control) { control.title = t(label); control.setAttribute("aria-label", t(label)); }
+    }
+    if (gpsMarker) gpsMarker.bindTooltip(node("span", `Tu posición GPS${gpsAccuracy}`));
+    if (gpsButton) { gpsButton.title = t("Usar mi ubicación GPS"); gpsButton.setAttribute("aria-label", t("Usar mi ubicación GPS")); }
+  }
   function renderSpecies() {
     const item = species();
     const list = node("dl", "");
@@ -458,7 +734,7 @@ function initApp() {
     $("species-details").replaceChildren(node("h2", item.name, "species-title"), node("p", item.scientificName, "scientific"), node("p", item.season, "season"), list, node("p", item.note, "species-note"));
     $("seo-content").replaceChildren(
       node("h2", `${item.name}: características, hábitat y cocina`),
-      node("p", SEO_DESCRIPTIONS[item.id])
+      node("p", language === "ca" ? SEO_CA[item.id] : SEO_DESCRIPTIONS[item.id])
     );
     renderResults();
   }
@@ -472,22 +748,26 @@ function initApp() {
     else {
       state.soil.units.forEach((unit) => {
         const detail = node("details", "");
-        detail.append(node("summary", `ICGC ${unit.code}: ${unit.name}`), node("p", unit.description, "small"));
+        const classification = !unit.types ? "Pendiente de verificar" : unit.types.length > 1 ? "Mixto (ácido/calcáreo)" : unit.types[0] === "acidic" ? "Ácido" : "Calcáreo";
+        detail.append(node("summary", `ICGC ${unit.code}`), node("p", `Clasificación orientativa: ${classification}`, "small"));
+        const source = node("a", "Consultar cartografía original");
+        source.href = "https://www.icgc.cat/ca/Geoinformacio-i-mapes/Mapes/Mapa-de-sols-de-Catalunya";
+        detail.append(source);
         target.append(detail);
       });
     }
     const match = compareHabitat(species(), state.soil, state.weather?.elevationM, state.vegetation);
     const badge = habitatBadgeState(match);
     $("habitat-badge").className = `badge ${badge.className}`;
-    $("habitat-badge").textContent = badge.label;
-    $("habitat-badge").title = "Compatibilidad heurística de suelo y árboles, independiente de la lluvia y la altitud; no confirma presencia de setas.";
+    setText($("habitat-badge"), badge.label);
+    $("habitat-badge").title = t("Compatibilidad heurística de suelo y árboles, independiente de la lluvia y la altitud; no confirma presencia de setas.");
     const text = { match: "Dentro del rango habitual", mismatch: "Fuera del rango habitual", unknown: "Pendiente de verificar" };
     const soilText = { match: "Suelo: Óptimo (Terreno adecuado para esta especie)", mismatch: "Suelo: Incompatible (Tipo de terreno no apto)", unknown: "Suelo: Pendiente de verificar (No hay información suficiente del terreno)" };
     target.append(node("p", soilText[match.soil], "small"));
     target.append(node("p", treeCompatibilityText(species(), state.vegetation, match.trees), "small"));
     if (state.vegetationError) target.append(node("p", state.vegetationError, "small"));
     else if (!state.vegetation) target.append(node("p", state.point ? "Consultando cubierta ICGC…" : "Elige un punto para consultar la cubierta.", "small"));
-    else target.append(node("p", state.vegetation.covers.length ? `Cubierta ICGC 2024: ${state.vegetation.covers.join(" · ")}` : "Sin cubierta disponible en este punto.", "small"));
+    else target.append(node("p", state.vegetation.covers.length ? `Cubierta ICGC 2024: ${[...new Set(state.vegetation.covers.map(coverDescription))].join(" · ")}` : "Sin cubierta disponible en este punto.", "small"));
     const attribution = node("a", "Fuente: ICGC · Cobertes del sòl 2024 · CC BY 4.0");
     attribution.href = "https://www.icgc.cat/ca/Geoinformacio-i-mapes/Geoinformacio-en-linia-Geoserveis/WMS-Cobertes-del-sol";
     target.append(attribution);
@@ -496,12 +776,14 @@ function initApp() {
   }
 
   function renderResults() {
+    updateMetadata();
+    $("share-whatsapp-btn").disabled = !state.point;
     renderSoil();
     const habitat = compareHabitat(species(), state.soil, state.weather?.elevationM, state.vegetation);
     const climate = state.weather ? analyzeHumidity(species(), state.weather.days) : { level: "unknown", reasons: [] };
     const analysis = applyVegetationPenalty(climate, habitat);
     paint(climate.level, analysis.level);
-    $("final-estimate").textContent = `Estimación final: ${names[analysis.level]}${habitat.soil === "mismatch" || habitat.trees === "mismatch" ? " — restricción biológica por hábitat incompatible" : ""}`;
+    setText($("final-estimate"), `Estimación final: ${names[analysis.level]}${habitat.soil === "mismatch" || habitat.trees === "mismatch" ? " — restricción biológica por hábitat incompatible" : ""}`);
     if (!state.weather) {
       for (const id of ["weather-metrics", "mini-calendar", "weather-period", "weather-reasons", "weather-shock"]) $(id).replaceChildren();
       $("calendar-empty").hidden = false;
@@ -509,15 +791,13 @@ function initApp() {
     }
     const days = state.weather.days;
     const recent = days.slice(-14);
-    $("analysis-status").textContent = `Punto ${state.point.lat.toFixed(4)}, ${state.point.lng.toFixed(4)} · Evaluación hasta ${days.at(-1).date}.`;
+    setText($("analysis-status"), `Punto ${state.point.lat.toFixed(4)}, ${state.point.lng.toFixed(4)} · Evaluación hasta ${days.at(-1).date}.`);
     const metrics = $("weather-metrics");
     metrics.replaceChildren();
     [[`${number(sum(recent.map((day) => day.rainMm)))} mm`, "Lluvia de los últimos 14 días"], [analysis.shockDate || "Sin shock", "Fin del episodio de lluvia inicial"]].forEach(([value, label]) => {
       const metric = node("div", "", "metric"); metric.append(node("strong", value), node("span", label)); metrics.append(metric);
     });
-    // Todo el cálculo conserva el orden cronológico original del histórico.
     const chronologicalCalendar = calendarDays(species(), days, analysis);
-    // Invertir solo una copia de los bloques calculados para su presentación.
     $("mini-calendar").replaceChildren(...[...chronologicalCalendar].reverse().map((day) => {
       const block = node("div", "", `calendar-day calendar-${day.status}`);
       const date = `${day.date.slice(8, 10)}/${day.date.slice(5, 7)}`;
@@ -528,28 +808,30 @@ function initApp() {
         node("span", `${number(day.meanC)} °C`, "calendar-temperature")
       );
       const description = `${day.date}: ${day.label}. Lluvia: ${number(day.rainMm)} mm. Temperatura media: ${number(day.meanC)} °C. Máxima: ${number(day.maxC)} °C.`;
-      block.title = description;
-      block.setAttribute("aria-label", description);
+      block.title = t(description);
+      block.setAttribute("aria-label", t(description));
       return block;
     }));
     $("calendar-empty").hidden = true;
-    $("weather-period").textContent = `${recent[0].date} a ${recent.at(-1).date} · 14/14 días completos. Histórico analizado: 28 días.`;
+    setText($("weather-period"), `${recent[0].date} a ${recent.at(-1).date} · 14/14 días completos. Histórico analizado: 28 días.`);
     $("weather-reasons").replaceChildren(...analysis.reasons.map((reason) => node("li", reason)));
-    $("weather-shock").textContent = analysis.shockDate ? `Shock: ${number(analysis.shockMm)} mm en ${analysis.shockHours} h. Estimación orientativa, sin garantía de fructificación.` : "";
+    setText($("weather-shock"), analysis.shockDate ? `Shock: ${number(analysis.shockMm)} mm en ${analysis.shockHours} h. Estimación orientativa, sin garantía de fructificación.` : "");
   }
 
-  async function consultPoint(lat, lng) {
+  async function consultPoint(lat, lng, placeName = "") {
+    cancelNavigation();
+    setText($("share-status"), "");
     if (!finite(lat) || !finite(lng) || lat < bounds[0][0] || lat > bounds[1][0] || lng < bounds[0][1] || lng > bounds[1][1]) {
-      $("analysis-status").textContent = "Selecciona un punto dentro del encuadre de Cataluña.";
+      setText($("analysis-status"), "Selecciona un punto dentro del encuadre de Cataluña.");
       return;
     }
     state.controller?.abort();
     const controller = new AbortController();
     state.controller = controller;
     const request = ++state.request;
-    Object.assign(state, { point: { lat, lng }, weather: null, soil: null, soilError: "", vegetation: null, vegetationError: "" });
+    Object.assign(state, { point: { lat, lng }, placeName, weather: null, soil: null, soilError: "", vegetation: null, vegetationError: "" });
     $("latitude").value = lat.toFixed(4); $("longitude").value = lng.toFixed(4);
-    $("analysis-status").textContent = "Consultando 28 días de lluvia, temperatura y humedad…";
+    setText($("analysis-status"), "Consultando 28 días de lluvia, temperatura y humedad…");
     $("weather-result").setAttribute("aria-busy", "true");
     if (map) {
       if (marker) marker.setLatLng([lat, lng]);
@@ -569,7 +851,7 @@ function initApp() {
         renderResults();
       } catch (error) {
         if (request !== state.request) return;
-        $("analysis-status").textContent = `No se puede evaluar el punto: ${error.message}. Pulsa Consultar punto para reintentar.`;
+        setText($("analysis-status"), `No se puede evaluar el punto: ${error.message}. Pulsa Consultar punto para reintentar.`);
         renderResults();
       } finally {
         if (request === state.request) $("weather-result").setAttribute("aria-busy", "false");
@@ -601,6 +883,7 @@ function initApp() {
   }
 
   select.replaceChildren(...MUSHROOMS.map((item) => { const option = node("option", item.name); option.value = item.id; return option; }));
+  if (initialPoint) select.value = initialPoint.speciesId;
   select.disabled = false;
   select.addEventListener("change", renderSpecies);
   $("point-form").addEventListener("submit", (event) => {
@@ -608,36 +891,84 @@ function initApp() {
     if ($("point-form").reportValidity()) consultPoint(Number($("latitude").value), Number($("longitude").value));
   });
   renderSpecies();
+  localizeTree();
   if (!window.L) {
-    $("map-status").textContent = "No se ha podido cargar Leaflet. Puedes consultar las coordenadas y las fichas sin mapa.";
+    setText($("map-status"), "No se ha podido cargar Leaflet. Puedes consultar las coordenadas y las fichas sin mapa.");
+    restoreSharedPoint();
     return;
   }
   map = L.map("map", { scrollWheelZoom: false });
   const center = () => map.fitBounds(bounds, { padding: [12, 12] });
   center();
+  const gpsControl = L.control({ position: "topleft" });
+  gpsControl.onAdd = () => {
+    const container = L.DomUtil.create("div", "leaflet-bar gps-control");
+    gpsButton = L.DomUtil.create("button", "gps-button", container);
+    gpsButton.type = "button";
+    gpsButton.textContent = "◎";
+    gpsButton.title = "Usar mi ubicación GPS";
+    gpsButton.setAttribute("aria-label", "Usar mi ubicación GPS");
+    L.DomEvent.disableClickPropagation(container);
+    L.DomEvent.disableScrollPropagation(container);
+    gpsButton.addEventListener("click", () => {
+      cancelNavigation();
+      if (!navigator.geolocation || !window.isSecureContext) {
+        setText($("navigation-status"), "El GPS requiere HTTPS (o localhost) y un navegador con geolocalización.");
+        return;
+      }
+      gpsPending = true;
+      gpsButton.disabled = true;
+      setText($("navigation-status"), "Buscando tu ubicación. Permite el acceso al GPS en el navegador.");
+      map.locate({ setView: true, maxZoom: 16, enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    });
+    return container;
+  };
+  gpsControl.addTo(map);
+  map.on("locationfound", (event) => {
+    if (!gpsPending) return;
+    gpsPending = false;
+    gpsButton.disabled = false;
+    if (gpsMarker) gpsMarker.setLatLng(event.latlng);
+    else gpsMarker = L.circleMarker(event.latlng, { radius: 6, color: "#fff", weight: 2, fillColor: "#2563eb", fillOpacity: 1 }).addTo(map);
+    const accuracy = finite(event.accuracy) ? ` (precisión aproximada: ${Math.round(event.accuracy)} m)` : "";
+    gpsAccuracy = accuracy;
+    gpsMarker.bindTooltip(node("span", `Tu posición GPS${accuracy}`));
+    setText($("navigation-status"), `Ubicación GPS encontrada${accuracy}.`);
+    consultPoint(event.latlng.lat, event.latlng.lng);
+    gpsMarker.bringToFront();
+  });
+  map.on("locationerror", (event) => {
+    if (!gpsPending) return;
+    gpsPending = false;
+    gpsButton.disabled = false;
+    setText($("navigation-status"), event.code === 1 ? "Permiso de ubicación denegado. Puedes buscar un lugar o introducir coordenadas." : "No se pudo obtener tu ubicación. Comprueba el GPS y vuelve a intentarlo.");
+  });
   const base = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> colaboradores'
   });
   let tileError = false;
-  base.on("loading", () => { tileError = false; $("map-status").textContent = "Cargando mapa…"; });
-  base.on("tileerror", () => { tileError = true; $("map-status").textContent = "No se han cargado algunas partes del mapa. Puedes usar las coordenadas."; });
-  base.on("load", () => { if (!tileError) $("map-status").textContent = ""; });
+  base.on("loading", () => { tileError = false; setText($("map-status"), "Cargando mapa…"); });
+  base.on("tileerror", () => { tileError = true; setText($("map-status"), "No se han cargado algunas partes del mapa. Puedes usar las coordenadas."); });
+  base.on("load", () => { if (!tileError) setText($("map-status"), ""); });
   base.addTo(map);
   const soilLayer = L.tileLayer.wms(SERVICES.soil, {
     layers: SERVICES.soilLayer, format: "image/png", transparent: true,
     version: "1.1.1", opacity: 0.45, attribution: '<a href="https://www.icgc.cat/">ICGC</a> · Suelos 1:250.000 · CC BY 4.0'
   });
-  soilLayer.on("tileerror", () => { $("soil-layer-status").textContent = "No se ha podido cargar la capa ICGC."; });
-  map.on("overlayadd", () => { $("soil-layer-status").textContent = "ICGC 1:250.000: acerca el mapa para ver las unidades de suelo."; });
-  map.on("overlayremove", () => { $("soil-layer-status").textContent = ""; });
+  soilLayer.on("tileerror", () => { setText($("soil-layer-status"), "No se ha podido cargar la capa ICGC."); });
+  map.on("overlayadd", () => { setText($("soil-layer-status"), "ICGC 1:250.000: acerca el mapa para ver las unidades de suelo."); });
+  map.on("overlayremove", () => { setText($("soil-layer-status"), ""); });
   L.control.layers(null, { "Suelos ICGC 1:250.000": soilLayer }, { collapsed: true }).addTo(map);
   map.on("click", (event) => consultPoint(event.latlng.lat, event.latlng.lng));
   $("reset-map").disabled = false;
   $("reset-map").addEventListener("click", center);
+  restoreSharedPoint();
+  localizeTree();
+  updateMapLabels();
   if (window.ResizeObserver) new ResizeObserver(() => map.invalidateSize({ pan: false })).observe($("map"));
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, soilInfoUrl, normalizeSoil, compareHabitat, vegetationInfoUrl, normalizeVegetation, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, calendarDays };
+  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, soilInfoUrl, normalizeSoil, compareHabitat, vegetationInfoUrl, normalizeVegetation, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription };
 }
 if (typeof document !== "undefined") initApp();
