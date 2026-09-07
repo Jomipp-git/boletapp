@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#123e32">
+  <meta name="description" content="Consulta lluvia reciente, ventanas de humedad y hábitats de diez setas de Cataluña sobre un mapa interactivo.">
+  <title>Buscador de Setas en Cataluña</title>
+  <link rel="preconnect" href="https://api.open-meteo.com">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script defer src="./mushrooms.js"></script>
+  <script defer src="./app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#species-select">Ir al selector de setas</a>
+  <header class="site-header"><span class="brand">Bosques de Cataluña</span><span class="edition">CATÁLOGO V1 · 10 ESPECIES</span></header>
+  <main>
+    <div class="intro"><p class="eyebrow">LLUVIA · HÁBITAT · TEMPORADA</p><h1>Buscador de Setas en Cataluña</h1><p>Selecciona una seta y un punto del mapa para consultar su ventana de humedad.</p></div>
+    <div class="workspace">
+      <section class="catalog card" aria-label="Catálogo de especies">
+        <label for="species-select">¿Qué seta buscas?</label>
+        <select id="species-select" disabled><option>Cargando catálogo…</option></select>
+        <article id="species-details" aria-live="polite" aria-atomic="true"></article>
+      </section>
+      <div class="explorer">
+        <section class="map-panel card" aria-labelledby="map-heading">
+          <div class="map-heading"><div><p class="eyebrow">ELIGE UN PUNTO</p><h2 id="map-heading">Mapa de Cataluña</h2></div><button id="reset-map" type="button" disabled>Centrar Cataluña</button></div>
+          <div id="map" role="region" aria-label="Mapa interactivo de Cataluña" aria-describedby="map-note"></div>
+          <p id="map-status" role="status">Cargando mapa…</p>
+          <p id="soil-layer-status" role="status"></p>
+          <div class="legend" aria-label="Estimación meteorológica"><span><i class="dot low"></i>Baja</span><span><i class="dot medium"></i>Media</span><span><i class="dot high"></i>Alta</span><span><i class="dot unknown"></i>Sin evaluar</span></div>
+          <p id="map-note" class="small">El color evalúa el punto consultado, no todo el bosque. No representa avistamientos.</p>
+          <form id="point-form" class="point-form">
+            <div><label for="latitude">Latitud</label><input id="latitude" name="latitude" type="number" min="40.5" max="42.9" step="any" value="42.1" required></div>
+            <div><label for="longitude">Longitud</label><input id="longitude" name="longitude" type="number" min="0.15" max="3.35" step="any" value="1.8" required></div>
+            <button type="submit">Consultar punto</button>
+          </form>
+          <p class="small padded">Puedes usar las coordenadas sin interactuar con el mapa. El área de consulta es un encuadre aproximado de Cataluña.</p>
+        </section>
+        <section class="results card" aria-labelledby="result-heading">
+          <div class="result-heading">
+            <h2 id="result-heading">Ventana óptima de humedad</h2>
+            <div class="result-badges">
+              <div class="signal-box"><span class="small">Clima</span><span id="probability" class="badge unknown" aria-label="Probabilidad meteorológica: Sin evaluar">Sin evaluar</span></div>
+              <div class="signal-box"><span class="small">Terreno</span><span id="habitat-badge" class="badge unknown" role="status">Hábitat pendiente</span></div>
+            </div>
+          </div>
+          <p id="final-estimate" role="status">Estimación final: Sin evaluar</p>
+          <p id="analysis-status" role="status">Consulta un punto para analizar las condiciones recientes.</p>
+          <div id="weather-result" aria-live="polite">
+            <div id="weather-metrics" class="metrics"></div>
+            <section id="calendar-panel" aria-labelledby="calendar-heading">
+              <h3 id="calendar-heading" class="small">Historial de condiciones diarias (Últimos 28 días)</h3>
+              <ul class="calendar-legend">
+                <li><span aria-hidden="true">🔵</span><span><strong>SHOCK:</strong> Día en el que la lluvia acumulada alcanza el shock que, según el modelo, puede despertar al hongo debajo de la tierra.</span></li>
+                <li><span aria-hidden="true">🔴</span><span><strong>Calor / Seco:</strong> Alerta. El bosque registró calor (máxima ≥25 °C) o más de 3 días sin al menos 1,5 mm diarios de lluvia, lo que puede retrasar o cancelar la brotada.</span></li>
+                <li><span aria-hidden="true">🟢</span><span><strong>Óptimo:</strong> ¡Día de gloria! Ese día está dentro de la ventana favorable tras la lluvia y presenta condiciones de humedad adecuadas según el modelo. Es una orientación, no una garantía de encontrar setas.</span></li>
+                <li><span aria-hidden="true">⚪</span><span><strong>Normal (Gris):</strong> El bosque está en calma: ese día no tiene una señal destacada en el episodio analizado y el hongo puede seguir esperando condiciones favorables.</span></li>
+              </ul>
+              <p id="calendar-empty" class="small">Consulta un punto para ver los últimos 28 días completos, desde ayer hacia atrás.</p>
+              <div id="mini-calendar" class="mini-calendar" tabindex="0" role="region" aria-labelledby="calendar-heading"></div>
+            </section>
+            <p id="weather-period" class="small"></p>
+            <ul id="weather-reasons"></ul>
+            <p id="weather-shock" class="small"></p>
+          </div>
+          <div id="soil-result" aria-live="polite"><p class="small">El suelo y los árboles del punto todavía no están verificados.</p></div>
+        </section>
+      </div>
+    </div>
+    <details class="method card"><summary>Cómo se calcula y qué falta por verificar</summary>
+      <p>Estimación heurística Baja, Media o Alta, no una probabilidad estadística de encontrar setas. Las reglas numéricas las ha aportado el propietario del proyecto y están pendientes de contraste con páginas concretas de Ramon Pascual y Enric Gràcia.</p>
+      <p>Se consultan 28 días completos hasta ayer para cubrir shocks de 48–72 horas y eclosiones de hasta 25 días. El resumen muestra los últimos 14 días. Lluvia líquida = lluvia + chubascos de Open-Meteo; se excluye la nieve. Son datos de modelo, no un pluviómetro en el punto.</p>
+      <p>Supuestos configurables: calor seco si la máxima alcanza 25 °C; humedad mantenida si la media relativa diaria alcanza el 75 %; lluvia fina de 0,2 a 5 mm/día. Alta requiere estar en ventana y humedad favorable al menos el 60 % de los días de incubación. La media de temperatura de los últimos tres días debe cumplir el rango de la ficha: templada 12–20 °C, frío 2–12 °C y calor &gt;20 °C. La Múrgola tiene un criterio cualitativo templado-fresco sin umbral numérico. Fuera de los meses óptimos de la especie, según el mes actual en Cataluña, la estimación es Baja.</p>
+      <p>Cuatro días secos y calurosos consecutivos cancelan el episodio. Más de 60 mm en siete días completos de incubación lo detienen. Son penalizaciones del modelo: no prueban saturación, enfriamiento ni muerte del micelio. Otro shock posterior puede iniciar un nuevo episodio. Además, cuatro días completos consecutivos con menos de 1,5 mm/día durante la incubación reducen un nivel la estimación (Alta a Media, Media a Baja), aunque la humedad del aire sea alta. Es una aproximación diaria a más de 72 horas; una lluvia de al menos 1,5 mm/día reinicia la racha, pero no borra una penalización anterior del mismo episodio.</p>
+      <p>El ICGC aporta unidades cartográficas a escala 1:250.000; una unidad puede mezclar suelos. El cruce ácido/calcáreo necesita una correspondencia revisada. La humedad del aire tampoco mide directamente el agua disponible en el suelo.</p>
+      <p>Bibliografía de referencia pendiente de verificación numérica: <cite>Guia dels bolets dels Països Catalans</cite>, Ramon Pascual (ISBN 9788490342435), y <cite>101 bolets de Catalunya que cal conèixer</cite>, Toni Llobet y Enric Gràcia (ISBN 9788490347096).</p>
+      <p>Fuentes: <a href="https://open-meteo.com/en/docs">Open-Meteo</a> · <a href="https://www.icgc.cat/es/Geoinformacion-y-mapas/Servicios-en-linea-Geoservicios/WMS-Geoindex/WMS-Suelos">ICGC Suelos</a>. Esta herramienta no identifica setas para consumo.</p>
+    </details>
+    <section id="seo-content" class="method card" aria-label="Características, hábitat y cocina de la seta seleccionada" aria-live="polite" aria-atomic="true">
+      <h2>Rovelló/Pinetell: características, hábitat y cocina</h2>
+      <p>El Rovelló y el Pinetell destacan por sus sombreros de tonos anaranjados o rojizos y su carne firme. En los pinares de Cataluña suelen aparecer entre acículas y hojarasca, a veces parcialmente ocultos bajo el suelo superficial. Las lluvias de otoño favorecen su aparición cuando la humedad persiste. Son protagonistas de la cocina catalana, especialmente en preparaciones a la brasa y guisos que aprovechan su textura y aroma forestal.</p>
+    </section>
+    <!-- Insertar aquí el bloque AdSense real cuando se configure la monetización. -->
+    <aside id="adsense-container" class="ad-slot" aria-label="Espacio reservado para publicidad"><span>PUBLICIDAD</span><p>Espacio reservado</p></aside>
+    <noscript><p>Activa JavaScript para consultar las fichas, las lluvias y el mapa.</p></noscript>
+  </main>
+  <footer><span>Buscador de Setas en Cataluña</span><span>Datos meteorológicos: <a href="https://open-meteo.com/">Open-Meteo</a> · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Agregación y análisis propios.</span></footer>
+</body>
+</html>
