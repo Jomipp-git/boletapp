@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { MUSHROOMS } = require('../mushrooms.js');
-const { analyzeHumidity: evaluateHumidity, normalizeWeather, previousDates, normalizeSoil, compareHabitat, weatherUrl } = require('../app.js');
+const { analyzeHumidity: evaluateHumidity, normalizeWeather, previousDates, compareHabitat, weatherUrl } = require('../app.js');
 const species = MUSHROOMS[0];
 const analyzeHumidity = (species, days) => evaluateHumidity(species, days, undefined, new Date(`${days.at(-1).date}T12:00:00Z`));
 const setMonth = (days, month) => {
@@ -221,98 +221,100 @@ test('sequedad penaliza Media a Baja incluso sin calor, y no se borra al llover'
   assert.equal(result.soilDryPenalty, true);
 });
 
-test('clasificación de suelo usa el nombre taxonómico real del ICGC, no el código de la unidad', () => {
-  // Muestras reales consultadas contra el WMS: epi_st siempre empieza por "S" en 1:250.000,
-  // así que el código no sirve como señal de acidez/calcareidad (ver comentario en app.js).
-  const calcareousSamples = [
-    { epi_st: 'S75', txt_st: 'Petrocàlcids xèrics i Calcixerepts típics', descripcio: 'Sòls amb un horitzó petrocàlcic.' },
-    { epi_st: 'S50', txt_st: 'Xerorthents típics i Haploxerepts càlcics', descripcio: 'Sòls calcaris de peu de mont.' }
-  ];
-  for (const properties of calcareousSamples) {
-    const soil = normalizeSoil({ features: [{ properties }] });
-    assert.deepEqual(soil.types, ['calcareous'], properties.epi_st);
-    assert.deepEqual(soil.units[0].types, ['calcareous'], properties.epi_st);
-  }
-  const pendingSamples = [
-    { epi_st: 'S21', txt_st: 'Ustorthents lítics i Haplustolls lítics', descripcio: 'El pH varía según la roca original: básico en calizas, ácido en granitos y pizarras.' },
-    { epi_st: 'S84', txt_st: 'Fluvàqüents thapto-hístics i Fluvàqüents típics', descripcio: 'Sòls al·luvials i litorals.' },
-    { epi_st: 'B21' }, // sin nombre ni descripción: el código por sí solo no basta como evidencia
-    {}
-  ];
-  for (const properties of pendingSamples) {
-    const soil = normalizeSoil({ features: [{ properties }] });
-    assert.equal(soil.types, null, JSON.stringify(properties));
-    assert.equal(soil.units[0].types, null, JSON.stringify(properties));
-  }
-});
-test('prioridad de campos y recorte de espacios', () => {
-  const fields = ['epi_st', 'COD_SOL', 'C_EDAFO', 'epi', 'code'];
-  fields.forEach((field, index) => {
-    const properties = Object.fromEntries(fields.map((name, i) => [name, i < index ? '' : 'A1']));
-    properties[field] = ' S21 ';
-    const soil = normalizeSoil({ features: [{ properties }] });
-    assert.equal(soil.units[0].code, 'S21');
-    assert.equal(soil.types, null);
-  });
-});
-test('respuestas vacías, propiedades ausentes, varias unidades y cruce de hábitat', () => {
-  assert.throws(() => normalizeSoil({}), /no reconocida/);
-  assert.deepEqual(normalizeSoil({ features: [] }), { units: [], types: null });
-  assert.equal(normalizeSoil({ features: [{}] }).types, null);
-  const soil = normalizeSoil({ features: [{ properties: { code: 'S21' } }] });
-  assert.equal(soil.units[0].name, 'Unidad de suelo S21');
-  assert.equal(compareHabitat({ soilTypes: ['acidic'] }, soil, null).soil, 'unknown');
-  assert.equal(compareHabitat({ soilTypes: ['calcareous'] }, soil, null).soil, 'unknown');
-  const calcareous = normalizeSoil({ features: [{ properties: { code: 'S75', txt_st: 'Calcixerepts típics' } }] });
-  calcareous.types.pop();
-  assert.deepEqual(calcareous.units[0].types, ['calcareous']);
-  const mixed = normalizeSoil({ features: [
-    { properties: { code: 'S75', txt_st: 'Calcixerepts típics' } },
-    { properties: { code: 'S21', txt_st: 'Ustorthents lítics' } }
-  ] });
-  assert.deepEqual(mixed.types, ['calcareous']);
-  assert.deepEqual(mixed.units[1].types, null);
+const { habitatInfoUrl, normalizeHabitat, habitatTreeCategories, habitatSoilTypes, matchVegetation, applyVegetationPenalty } = require('../app.js');
+
+test('URL de hábitat consulta el punto exacto por INTERSECTS, no una caja', () => {
+  const url = new URL(habitatInfoUrl(42.1, 1.8));
+  assert.equal(url.searchParams.get('typeName'), 'HABITATS:HABITATS_TERRESTPOL');
+  assert.equal(url.searchParams.get('outputFormat'), 'application/json');
+  assert.equal(url.searchParams.get('srsName'), 'EPSG:4326');
+  assert.equal(url.searchParams.get('CQL_FILTER'), 'INTERSECTS(GEOMETRIA, SRID=4326;POINT(1.8 42.1))');
 });
 
-const { vegetationInfoUrl, normalizeVegetation, matchVegetation, applyVegetationPenalty } = require('../app.js');
-test('URL de cubiertas usa capa 2024, delta 0.005 y formato admitido', () => {
-  const url = new URL(vegetationInfoUrl(42.1, 1.8));
-  assert.equal(url.searchParams.get('LAYERS'), 'cobertes_2024');
-  assert.equal(url.searchParams.get('QUERY_LAYERS'), 'cobertes_2024');
-  assert.equal(url.searchParams.get('INFO_FORMAT'), 'text/plain');
-  assert.equal(url.searchParams.get('SRS'), 'EPSG:4326');
-  const bbox = url.searchParams.get('BBOX').split(',').map(Number);
-  assert.ok(Math.abs(bbox[2] - bbox[0] - 0.01) < 1e-10);
-  assert.ok(Math.abs(bbox[3] - bbox[1] - 0.01) < 1e-10);
+test('categorías de árbol: binomio latino entre paréntesis, con sustantivo catalán como respaldo', () => {
+  // Con binomio: la señal principal, incluida Quercus por especie (Encinas/Alcornoques/Robles).
+  assert.deepEqual(habitatTreeCategories('Boscos de pi roig (Pinus sylvestris), calcícoles'), ['Pinos']);
+  assert.deepEqual(habitatTreeCategories('Màquies de carrasca (Quercus rotundifolia), calcícoles'), ['Encinas']);
+  assert.deepEqual(habitatTreeCategories('Suredes (Quercus suber)'), ['Alcornoques']);
+  assert.deepEqual(habitatTreeCategories('Boscos de roure martinenc (Quercus pubescens), calcícoles'), ['Robles']);
+  assert.deepEqual(habitatTreeCategories('Castanyedes (Castanea sativa)'), ['Castaños']);
+  assert.deepEqual(habitatTreeCategories('Freixenedes (Fraxinus excelsior)'), ['Fresnos']);
+  assert.deepEqual(
+    habitatTreeCategories('Boscos mixtos de roure martinenc i pi roig (Quercus pubescens, Pinus sylvestris), calcícoles').sort(),
+    ['Pinos', 'Robles']
+  );
+  // Sin binomio (ocurre en varias entradas reales, p. ej. "Fagedes calcícoles..." sin "Fagus
+  // sylvatica" entre paréntesis): cae al sustantivo catalán de tipo de bosque.
+  assert.deepEqual(habitatTreeCategories('Fagedes calcícoles, xeromesòfiles, de la muntanya mitjana poc plujosa'), ['Hayas']);
+  assert.deepEqual(habitatTreeCategories('Carrascars muntanyencs'), ['Encinas']);
+  assert.deepEqual(habitatTreeCategories('Pinedes de pi roig (Pinus sylvestris), o repoblacions, sense sotabosc forestal'), ['Pinos']);
+  // Género no mapeado (avellaner = Corylus, no es huésped de ninguna especie del catálogo) o
+  // texto sin ningún árbol: no se adivina, lista vacía.
+  assert.deepEqual(habitatTreeCategories("Avellanoses (bosquines de Corylus avellana), mesòfiles o mesoxeròfiles"), []);
+  assert.deepEqual(habitatTreeCategories('Prats calcícoles i mesòfils, amb Festuca nigrescens'), []);
 });
-test('formato MapServer preserva apóstrofos y deduplica píxeles', () => {
-  const response = "GetFeatureInfo results:\nLayer 'cobertes_2024'\n  Feature 0:\n    class = '223. Boscos densos d’esclerofil·les i laurifolis'\n  Feature 1:\n    class = '223. Boscos densos d’esclerofil·les i laurifolis'";
-  const vegetation = normalizeVegetation(response);
-  assert.equal(vegetation.covers.length, 1);
-  assert.equal(matchVegetation({ trees: ['Encinas'] }, vegetation), 'match');
-  assert.equal(matchVegetation({ trees: ['Pinos'] }, vegetation), 'mismatch');
-  assert.throws(() => normalizeVegetation('<ServiceException>Unsupported format</ServiceException>'), /no reconocida/);
-  assert.deepEqual(normalizeVegetation('GetFeatureInfo results:\n'), { covers: [] });
+
+test('tipo de suelo se lee de "calcícola"/"silicícola" en el propio texto del hábitat', () => {
+  assert.deepEqual(habitatSoilTypes(['Fagedes calcícoles, xeromesòfiles']), ['calcareous']);
+  assert.deepEqual(habitatSoilTypes(["Bruguerars amb bruc d'escombres, silicícoles, dels sòls profunds"]), ['acidic']);
+  assert.deepEqual(habitatSoilTypes(['Text calcícola', 'Text silicícola']).sort(), ['acidic', 'calcareous']);
+  assert.equal(habitatSoilTypes(['Carrascars muntanyencs']), null);
+  assert.equal(habitatSoilTypes([]), null);
 });
-test('compatibilidad de árboles normaliza acentos y evita coincidencias parciales de pi', () => {
-  for (const text of ['Boscos de coníferes', 'Bosc de pi roig', 'Pinassa']) {
-    assert.equal(matchVegetation({ trees: ['Pinos'] }, { covers: [text] }), 'match');
+
+test('normalizeHabitat: unidades reales del WFS, huecos y deduplicado', () => {
+  assert.throws(() => normalizeHabitat({}), /no reconocida/);
+  assert.deepEqual(normalizeHabitat({ features: [] }), { units: [], types: null, covers: [] });
+  const empty = normalizeHabitat({ features: [{}] });
+  assert.equal(empty.units[0].types, null);
+  assert.equal(empty.units[0].name, 'Unidad de hábitat ');
+
+  const calcareous = normalizeHabitat({ features: [{ properties: {
+    COD_CORINE: '41.1751', CORINE_CA: 'Fagedes calcícoles, xeromesòfiles, de la muntanya mitjana poc plujosa', EUNIS_ES: 'Box beech forests'
+  } }] });
+  assert.deepEqual(calcareous.types, ['calcareous']);
+  assert.deepEqual(calcareous.units[0].types, ['calcareous']);
+  assert.equal(calcareous.units[0].code, '41.1751');
+  assert.equal(calcareous.covers[0], 'Fagedes calcícoles, xeromesòfiles, de la muntanya mitjana poc plujosa');
+
+  const acidic = normalizeHabitat({ features: [{ properties: {
+    COD_CORINE: '32.321+', CORINE_CA: "Bruguerars amb dominància o abundància de bruc d'escombres (Erica scoparia), silicícoles, dels sòls profunds i poc secs de terra baixa"
+  } }] });
+  assert.deepEqual(acidic.types, ['acidic']);
+
+  // Unidades repetidas se deduplican en covers; las unidades sin tipo se conservan como null.
+  const mixed = normalizeHabitat({ features: [
+    { properties: { COD_CORINE: '41.1751', CORINE_CA: 'Fagedes calcícoles' } },
+    { properties: { COD_CORINE: '41.1751', CORINE_CA: 'Fagedes calcícoles' } },
+    { properties: { COD_CORINE: '45.3415+', CORINE_CA: 'Carrascars muntanyencs' } }
+  ] });
+  assert.deepEqual(mixed.types, ['calcareous']);
+  assert.equal(mixed.covers.length, 2);
+  assert.equal(mixed.units[2].types, null);
+});
+
+test('matchVegetation reconoce el hábitat real de la Generalitat', () => {
+  const pinos = { trees: ['Pinos'] };
+  const encinas = { trees: ['Encinas'] };
+  assert.equal(matchVegetation(pinos, { covers: ['Boscos de pi roig (Pinus sylvestris), calcícoles i xeròfils, dels Pirineus'] }), 'match');
+  assert.equal(matchVegetation(encinas, { covers: ['Boscos de pi roig (Pinus sylvestris), calcícoles i xeròfils, dels Pirineus'] }), 'mismatch');
+  // Sin binomio: cae al sustantivo catalán ("Carrascars" = alzinar/Encinas).
+  assert.equal(matchVegetation(encinas, { covers: ['Carrascars muntanyencs'] }), 'match');
+  assert.equal(matchVegetation(pinos, { covers: ['Carrascars muntanyencs'] }), 'mismatch');
+  // Especie con varios huéspedes: basta con que uno de los géneros detectados encaje.
+  const rossinyol = { trees: ['Encinas', 'Alcornoques', 'Robles'] };
+  assert.equal(matchVegetation(rossinyol, { covers: ['Boscos de roure martinenc (Quercus pubescens), calcícoles, de la muntanya mitjana'] }), 'match');
+  // Vocabulario CORINE sin cobertura arbórea: incompatible.
+  for (const cover of ['Camps condicionats com a pastura intensiva, secs o poc humits', 'Vies i nusos de comunicacions i altres espais oberts', 'Prats calcícoles i mesòfils, amb Festuca nigrescens']) {
+    assert.equal(matchVegetation(pinos, { covers: [cover] }), 'mismatch', cover);
   }
-  for (const tree of ['Encinas', 'Robles', 'Hayas']) {
-    for (const text of ['Frondoses', 'alzina', 'roure', 'faig']) {
-      assert.equal(matchVegetation({ trees: [tree] }, { covers: [text] }), 'match');
-    }
-  }
-  // Fresnos/Freixes es huésped de la Múrgola (mushrooms.js); sin este patrón, una cobertura de
-  // fresneda nunca se detectaba como compatible aunque wantsBroadleaves fuera true.
-  for (const text of ['Freixeda', 'freixeneda', 'Fresneda', 'Boscos de freixes']) {
-    assert.equal(matchVegetation({ trees: ['Fresnos'] }, { covers: [text] }), 'match', text);
-  }
-  assert.equal(matchVegetation({ trees: ['Pinos'] }, { covers: ['pista'] }), 'unknown');
-  assert.equal(matchVegetation({ trees: ['Pinos'] }, { covers: ['Boscos sense classificar'] }), 'unknown');
+  // Ni árbol reconocido ni vocabulario no forestal: pendiente, no se adivina.
+  assert.equal(matchVegetation(pinos, { covers: ["Avellanoses (bosquines de Corylus avellana), mesòfiles"] }), 'unknown');
+  assert.equal(matchVegetation(pinos, { covers: [] }), 'unknown');
+  assert.equal(matchVegetation(pinos, null), 'unknown');
 });
 test('cubiertas incompatibles fuerzan Baja y prevalecen sobre menciones de árboles', () => {
-  for (const cover of ['Conreus herbacis', 'Zona agrícola', 'Zones urbanitzades', 'Prats i herbassars', 'Prado desarbolado', 'Zona urbana amb pi']) {
+  for (const cover of ['Camps condicionats com a pastura intensiva', 'Vies i nusos de comunicacions i altres espais oberts', 'Prats calcícoles i mesòfils, amb Festuca nigrescens']) {
     const habitat = compareHabitat({ trees: ['Pinos'] }, null, null, { covers: [cover] });
     assert.equal(habitat.trees, 'mismatch', cover);
     const analysis = { level: 'high', reasons: ['Humedad favorable'] };
@@ -321,7 +323,7 @@ test('cubiertas incompatibles fuerzan Baja y prevalecen sobre menciones de árbo
   }
 });
 test('vacíos, errores y cubiertas contradictorias no generan incompatibilidad falsa', () => {
-  for (const vegetation of [null, { covers: [] }, { covers: ['Boscos de coníferes', 'Zona urbana'] }]) {
+  for (const vegetation of [null, { covers: [] }, { covers: ['Boscos de pi roig (Pinus sylvestris)', 'Vies i nusos de comunicacions'] }]) {
     const habitat = compareHabitat({ trees: ['Pinos'] }, null, null, vegetation);
     assert.equal(habitat.trees, 'unknown');
     assert.equal(applyVegetationPenalty({ level: 'medium', reasons: [] }, habitat).level, 'medium');
@@ -329,18 +331,20 @@ test('vacíos, errores y cubiertas contradictorias no generan incompatibilidad f
 });
 
 const { treeCompatibilityText, SEO_DESCRIPTIONS } = require('../app.js');
-test('aciculifolis y coníferes activan compatibilidad y el texto solicitado', () => {
-  for (const cover of ['Boscos densos d’aciculifolis', 'Boscos de coníferes']) {
+test('binomio latino y sustantivo catalán activan compatibilidad y el texto solicitado', () => {
+  for (const cover of ['Boscos de pi roig (Pinus sylvestris), calcícoles', 'Pinedes de pi roig (Pinus sylvestris), o repoblacions']) {
     const vegetation = { covers: [cover] };
     const species = { trees: ['Pinos'] };
     const status = matchVegetation(species, vegetation);
     assert.equal(status, 'match');
     assert.equal(treeCompatibilityText(species, vegetation, status), 'Árboles: Compatibles (Presencia del bosque asociado detectada)');
   }
-  for (const tree of ['Encinas', 'Robles']) {
+  // Un mismo paréntesis lista dos binomios (roure martinenc = Quercus pubescens, pi roig =
+  // Pinus sylvestris): ambos géneros deben extraerse, no solo el primero.
+  for (const tree of ['Robles', 'Pinos']) {
     const species = { trees: [tree] };
-    const vegetation = { covers: ['Boscos de frondoses'] };
-    assert.equal(treeCompatibilityText(species, vegetation, matchVegetation(species, vegetation)), 'Árboles: Compatibles (Presencia del bosque asociado detectada)');
+    const vegetation = { covers: ['Boscos mixtos de roure martinenc i pi roig (Quercus pubescens, Pinus sylvestris), calcícoles'] };
+    assert.equal(treeCompatibilityText(species, vegetation, matchVegetation(species, vegetation)), 'Árboles: Compatibles (Presencia del bosque asociado detectada)', tree);
   }
   assert.match(treeCompatibilityText({ trees: ['Pinos'] }, null, 'unknown'), /Pendientes/);
 });
@@ -382,7 +386,7 @@ test('distintivo de hábitat exige suelo y árboles compatibles', () => {
   }
 });
 test('hábitat óptimo se conserva con meteorología Baja y sin depender de altitud', () => {
-  const habitat = compareHabitat(MUSHROOMS[0], { types: ['calcareous'] }, null, { covers: ['Boscos de coníferes'] });
+  const habitat = compareHabitat(MUSHROOMS[0], { types: ['calcareous', 'acidic'] }, null, { covers: ['Boscos de pi roig (Pinus sylvestris), calcícoles'] });
   assert.equal(analyzeHumidity(MUSHROOMS[0], makeDays()).level, 'low');
   assert.deepEqual(habitatBadgeState(habitat), { className: 'optimal', label: 'Hábitat Óptimo' });
   assert.equal(habitatBadgeState({ soil: 'unknown', trees: 'unknown' }).label, 'Hábitat pendiente');
@@ -391,16 +395,18 @@ test('hábitat óptimo se conserva con meteorología Baja y sin depender de alti
 test('botánica: pinares y frondosas se cruzan con todos los huéspedes de la seta', () => {
   for (const name of ['rovello-pinetell', 'camagroc', 'cama-perdiu', 'fredolic', 'llenega-negra']) {
     const item = MUSHROOMS.find(s => s.id === name);
-    for (const cover of ['esclerofil-les', 'esclerofil·les', 'alzina', 'frondoses']) {
-      assert.equal(compareHabitat(item, null, null, { covers: [cover] }).trees, 'mismatch', name);
+    for (const cover of ['Carrascars muntanyencs', 'Fagedes calcícoles', 'Boscos de roure martinenc (Quercus pubescens)']) {
+      assert.equal(compareHabitat(item, null, null, { covers: [cover] }).trees, 'mismatch', `${name}: ${cover}`);
     }
-    assert.equal(compareHabitat(item, null, null, { covers: ['aciculifolis'] }).trees, 'match');
+    assert.equal(compareHabitat(item, null, null, { covers: ['Pinedes de pi roig (Pinus sylvestris)'] }).trees, 'match', name);
   }
-  for (const name of ['rossinyol', 'trompeta-mort', 'ous-reig', 'cep']) {
+  for (const name of ['rossinyol', 'trompeta-mort', 'ous-reig']) {
     const item = MUSHROOMS.find(s => s.id === name);
-    assert.equal(compareHabitat(item, null, null, { covers: ['frondoses'] }).trees, 'match', name);
+    assert.equal(compareHabitat(item, null, null, { covers: ['Carrascars muntanyencs'] }).trees, 'match', name);
   }
-  assert.equal(matchVegetation({ trees: ['Castaños'] }, { covers: ['esclerofil-les'] }), 'match');
+  // Cep no tiene Encinas entre sus huéspedes (Hayas, Robles, Pinos): otra cubierta compatible.
+  assert.equal(compareHabitat(MUSHROOMS.find(s => s.id === 'cep'), null, null, { covers: ['Fagedes calcícoles'] }).trees, 'match');
+  assert.equal(matchVegetation({ trees: ['Castaños'] }, { covers: ['Castanyedes (Castanea sativa)'] }), 'match');
 });
 test('las tres variedades de rovelló difieren en suelo, no en árboles', () => {
   const pinetell = MUSHROOMS.find(s => s.id === 'rovello-pinetell');
@@ -415,7 +421,7 @@ test('las tres variedades de rovelló difieren en suelo, no en árboles', () => 
     assert.equal(compareHabitat(species, { types: ['calcareous'] }, null).soil, 'match', species.id);
   }
   for (const species of [pinetell, esclatasangs, salmonicolor]) {
-    assert.equal(compareHabitat(species, null, null, { covers: ['aciculifolis'] }).trees, 'match', species.id);
+    assert.equal(compareHabitat(species, null, null, { covers: ['Pinedes de pi roig (Pinus sylvestris)'] }).trees, 'match', species.id);
   }
 });
 test('incompatibilidad del suelo o árboles fuerza final Baja sin modificar clima', () => {
@@ -424,33 +430,6 @@ test('incompatibilidad del suelo o árboles fuerza final Baja sin modificar clim
     assert.equal(applyVegetationPenalty(climate, habitat).level, 'low');
     assert.equal(habitatBadgeState(habitat).label, 'Hábitat Incompatible');
     assert.equal(climate.level, 'high');
-  }
-});
-
-test('suelos combinan unidades válidas sin duplicados y conservan unidades sin tipo', () => {
-  const soil = normalizeSoil({
-    features: [
-      { code: 'S75', txt_st: 'Calcixerepts típics' },
-      { code: 'S50', txt_st: 'Haploxerepts càlcics' },
-      { code: 'S21', txt_st: 'Ustorthents lítics' },
-      { code: '' }
-    ].map((properties) => ({ properties }))
-  });
-  assert.deepEqual(soil.types, ['calcareous']);
-  assert.equal(soil.units.length, 4);
-  assert.equal(soil.units[2].types, null);
-  assert.equal(soil.units[3].types, null);
-  assert.equal(normalizeSoil({ features: [{ properties: {} }, { properties: {} }] }).types, null);
-});
-test('vegetación admite objetos JSON, JSON serializado y texto MapServer', () => {
-  const payload = { features: [{ properties: { class: 'Boscos de coníferes' } }, { properties: { class: 'Boscos de coníferes' } }] };
-  const expected = { covers: ['Boscos de coníferes'] };
-  assert.deepEqual(normalizeVegetation(payload), expected);
-  assert.deepEqual(normalizeVegetation('\uFEFF  ' + JSON.stringify(payload) + '\n'), expected);
-  assert.deepEqual(normalizeVegetation("GetFeatureInfo results:\n class = 'Boscos de coníferes'\n"), expected);
-  assert.deepEqual(normalizeVegetation('{"features":[]}'), { covers: [] });
-  for (const invalid of ['{broken}', '{"error":"WMS failure"}', '[]', '<ServiceException>Error</ServiceException>']) {
-    assert.throws(() => normalizeVegetation(invalid), /no reconocida/);
   }
 });
 

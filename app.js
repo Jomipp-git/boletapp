@@ -16,10 +16,13 @@ const HUMIDITY_CONFIG = Object.freeze({
 const SERVICES = Object.freeze({
   // Uso gratuito no comercial. Para monetizar: endpoint/proxy autorizado, nunca claves aquí.
   weather: "https://api.open-meteo.com/v1/forecast",
-  soil: "https://geoserveis.icgc.cat/servei/catalunya/edafologia/wms",
-  soilLayer: "10_STAX_PA",
-  vegetation: "https://geoserveis.icgc.cat/servei/catalunya/cobertes-sol/wms",
-  vegetationLayer: "cobertes_2024",
+  // WFS oficial de la Generalitat (Cartografia dels hàbitats de Catalunya, v3 2019/2024).
+  // Sustituye a los WMS de suelo y vegetación del ICGC: una sola consulta por punto exacto
+  // (no por caja) devuelve el hábitat real, con el género/especie del árbol dominante entre
+  // paréntesis y el carácter edáfico ("calcícola"/"silicícola") en el propio texto.
+  habitat: "https://sig.gencat.cat/ows/HABITATS/wfs",
+  habitatWms: "https://sig.gencat.cat/ows/HABITATS/wms",
+  habitatLayer: "HABITATS:HABITATS_TERRESTPOL",
   timeoutMs: 20000,
   cacheMs: 15 * 60 * 1000
 });
@@ -185,89 +188,95 @@ function analyzeHumidity(species, days, config = HUMIDITY_CONFIG, now = new Date
   return evaluated.reduce((best, next) => rank[next.level] >= rank[best.level] ? next : best);
 }
 
-function soilInfoUrl(lat, lng) {
-  const delta = 0.05;
-  const url = new URL(SERVICES.soil);
+function habitatInfoUrl(lat, lng) {
+  const url = new URL(SERVICES.habitat);
   url.search = new URLSearchParams({
-    SERVICE: "WMS", VERSION: "1.1.1", REQUEST: "GetFeatureInfo",
-    LAYERS: SERVICES.soilLayer, QUERY_LAYERS: SERVICES.soilLayer, STYLES: "",
-    SRS: "EPSG:4326", BBOX: [lng - delta, lat - delta, lng + delta, lat + delta].join(","),
-    WIDTH: 101, HEIGHT: 101, X: 50, Y: 50, INFO_FORMAT: "application/json", FEATURE_COUNT: 5
+    service: "WFS", version: "2.0.0", request: "GetFeature",
+    typeName: SERVICES.habitatLayer, outputFormat: "application/json", srsName: "EPSG:4326",
+    // Punto exacto, no una caja: el polígono que realmente contiene el punto, sin mezclar
+    // parches vecinos (la capa está muy fragmentada; una caja de solo ~1 km ya devuelve
+    // decenas de polígonos distintos, comprobado consultando el WFS en vivo).
+    CQL_FILTER: `INTERSECTS(GEOMETRIA, SRID=4326;POINT(${lng} ${lat}))`
   });
   return url.toString();
 }
 
-// El código de unidad del WMS (epi_st) no codifica acidez/calcareidad: en el servicio real de
-// l'ICGC casi todas las unidades del mapa 1:250.000 empiezan por "S" (comprobado consultando el
-// WMS en varios puntos de Cataluña), así que adivinar el tipo por la primera letra clasificaba
-// erróneamente el terreno la mayoría de las veces. El nombre taxonómico (txt_st/st) es la señal
-// más fiable: un epíteto con raíz "calc-" (Calcixerepts, Petrocàlcids…) indica horizonte cálcico.
-// La "descripcio" libre queda fuera a propósito: menciona "carbonat càlcic" tanto al hablar de
-// suelos con carbonato alto como bajo (verificado consultando el WMS en vivo), así que buscar
-// "calc" ahí produce falsos positivos en unidades explícitamente variables. El resto de unidades
-// quedan pendientes en vez de forzar una coincidencia (ver AGENTS.md: "Completa la correspondencia
-// de suelos únicamente con evidencia; unidades mixtas... siguen pendientes").
-function classifySoilTypes(name) {
-  const text = name.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-  return /\bcalc[a-z]*/.test(text) ? ["calcareous"] : null;
-}
-
-function normalizeSoil(payload) {
-  if (!Array.isArray(payload.features)) throw new Error("Respuesta de suelo no reconocida.");
-  const units = payload.features.map((feature) => {
-    const props = feature.properties || {};
-    const code = String(props.epi_st || props.COD_SOL || props.C_EDAFO || props.epi || props.code || "").trim();
-    const name = String(props.txt_st || props.st || "");
-    const description = String(props.descripcio || "");
-    return {
-      code,
-      name: name || "Unidad de suelo " + code,
-      description: description || "Descripción disponible en el mapa base del ICGC.",
-      types: classifySoilTypes(name)
-    };
-  });
-  const allTypes = [...new Set(units.flatMap(u => u.types || []))];
-  return { units, types: allTypes.length > 0 ? allTypes : null };
-}
-
-function vegetationInfoUrl(lat, lng) {
-  const delta = 0.005;
-  const url = new URL(SERVICES.vegetation);
-  url.search = new URLSearchParams({
-    SERVICE: "WMS", VERSION: "1.1.1", REQUEST: "GetFeatureInfo",
-    LAYERS: SERVICES.vegetationLayer, QUERY_LAYERS: SERVICES.vegetationLayer, STYLES: "",
-    SRS: "EPSG:4326", BBOX: [lng - delta, lat - delta, lng + delta, lat + delta].join(","),
-    // GetCapabilities y consulta real: este WMS NO admite application/json.
-    WIDTH: 101, HEIGHT: 101, X: 50, Y: 50, INFO_FORMAT: "text/plain", FEATURE_COUNT: 5
-  });
-  return url.toString();
-}
-
-function normalizeVegetation(payload) {
-  // La consulta se lee como texto: admitir también JSON serializado, incluso
-  // si el servidor no anuncia correctamente su Content-Type.
-  if (typeof payload === "string") {
-    payload = payload.trim();
-    if (payload.startsWith("{") || payload.startsWith("[")) {
-      try {
-        payload = JSON.parse(payload);
-      } catch {
-        throw new Error("Respuesta de vegetación no reconocida: JSON inválido.");
+// El texto de cada hábitat (CORINE_CA) trae el género y especie del árbol dominante entre
+// paréntesis, p. ej. "Carrascars amb pins (Pinus spp.)" o "Boscos de roure martinenc (Quercus
+// pubescens)...". Es más fiable que el nombre común en catalán, que varía mucho entre comarcas
+// (carrasca/alzina, roure martinenc/reboll...) y que forzaría a mantener a mano una lista de
+// sinónimos. Quercus necesita la especie para distinguir Encinas/Alcornoques/Robles.
+const CORINE_TREE_GENUS = Object.freeze({ pinus: "Pinos", fagus: "Hayas", fraxinus: "Fresnos", castanea: "Castaños" });
+const CORINE_QUERCUS_SPECIES = Object.freeze({
+  rotundifolia: "Encinas", ilex: "Encinas", suber: "Alcornoques",
+  pubescens: "Robles", humilis: "Robles", faginea: "Robles", petraea: "Robles", robur: "Robles", cerrioides: "Robles", canariensis: "Robles"
+});
+// Algunas entradas de bosque no incluyen el binomio latino (p. ej. "Fagedes calcícoles...",
+// "Carrascars muntanyencs"): se recurre al sustantivo catalán de tipo de bosque como señal
+// secundaria, solo cuando no apareció ningún género reconocible en el texto.
+const CATALAN_FOREST_NOUN_PATTERNS = Object.freeze([
+  [/\bcarrascars?\b/, "Encinas"], [/\balzinars?\b/, "Encinas"],
+  [/\bfaged[ae]s?\b/, "Hayas"],
+  [/\broured[ae]s?\b/, "Robles"],
+  [/\bpined[ae]s?\b/, "Pinos"], [/\bpinass[ae]s?\b/, "Pinos"],
+  [/\bsured[ae]s?\b/, "Alcornoques"],
+  [/\bcastanyed[ae]s?\b/, "Castaños"], [/\bcastanyars?\b/, "Castaños"],
+  [/\bfreixened[ae]s?\b/, "Fresnos"], [/\bfreixenars?\b/, "Fresnos"]
+]);
+function habitatTreeCategories(text) {
+  const categories = new Set();
+  // Un mismo paréntesis puede listar varios binomios separados por coma, p. ej. "(Quercus
+  // pubescens, Pinus sylvestris)": se extrae primero el contenido del paréntesis y luego cada
+  // par género-especie dentro, en vez de anclar el género justo tras el "(" de apertura.
+  for (const span of text.matchAll(/\(([^)]+)\)/g)) {
+    for (const match of span[1].matchAll(/([A-Z][a-zà-ÿ]+)\s+([a-zà-ÿ.]+)/g)) {
+      const genus = match[1].toLowerCase();
+      const species = match[2].toLowerCase().replace(/\.$/, "");
+      if (genus === "quercus") {
+        const category = CORINE_QUERCUS_SPECIES[species];
+        if (category) categories.add(category);
+      } else if (CORINE_TREE_GENUS[genus]) {
+        categories.add(CORINE_TREE_GENUS[genus]);
       }
     }
   }
-  let labels;
-  if (typeof payload === "string") {
-    if (!payload.trimStart().startsWith("GetFeatureInfo results:")) throw new Error("Respuesta de vegetación no reconocida.");
-    // Campo class verificado en el WMS; conservar apóstrofos internos del catalán.
-    labels = [...payload.matchAll(/^\s*class\s*=\s*'(.+)'\s*$/gm)].map((match) => match[1]);
-  } else if (Array.isArray(payload?.features)) {
-    labels = payload.features.map((feature) => {
-      const props = feature?.properties || {};
-      return props.class || props.descripcio || props.DESCRIPCIO || props.description || props.nom || props.name || "";
-    });
-  } else throw new Error("Respuesta de vegetación no reconocida.");
-  return { covers: [...new Set(labels.filter((label) => typeof label === "string" && label.trim()).map((label) => label.trim()))] };
+  if (categories.size === 0) {
+    const normalized = text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    for (const [pattern, category] of CATALAN_FOREST_NOUN_PATTERNS) {
+      if (pattern.test(normalized)) categories.add(category);
+    }
+  }
+  return [...categories];
+}
+
+// "Calcícola"/"silicícola" describen directamente la preferencia edáfica de la comunidad
+// vegetal del hábitat: es una señal más directa que cruzar por separado con el mapa de suelos.
+// Sin ninguna de las dos palabras, queda pendiente en vez de adivinar.
+function habitatSoilTypes(texts) {
+  const text = texts.join(" ").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const types = [
+    ...(/calcicol/.test(text) ? ["calcareous"] : []),
+    ...(/silicicol|acidofil/.test(text) ? ["acidic"] : [])
+  ];
+  return types.length ? types : null;
+}
+
+function normalizeHabitat(payload) {
+  if (!Array.isArray(payload.features)) throw new Error("Respuesta de hábitat no reconocida.");
+  const units = payload.features.map((feature) => {
+    const props = feature.properties || {};
+    const code = String(props.COD_CORINE || "").trim();
+    const name = String(props.CORINE_CA || "");
+    return {
+      code,
+      name: name || "Unidad de hábitat " + code,
+      description: String(props.EUNIS_ES || props.HIC_CA || "Descripción disponible en la cartografia d'hàbitats de Catalunya."),
+      types: habitatSoilTypes([name])
+    };
+  });
+  const covers = [...new Set(units.map((unit) => unit.name).filter(Boolean))];
+  const allTypes = [...new Set(units.flatMap((unit) => unit.types || []))];
+  return { units, types: allTypes.length ? allTypes : null, covers };
 }
 
 // Textos editoriales informativos; no son claves de identificación.
@@ -286,23 +295,21 @@ const SEO_DESCRIPTIONS = Object.freeze({
   "ous-reig": "Las oronjas reciben su nombre por la envoltura blanquecina que rodea los ejemplares jóvenes. Al desarrollarse muestran un sombrero anaranjado y láminas y pie amarillos. Prefieren ambientes cálidos de bosques de frondosas, como encinares y castañares, donde pueden esconderse bajo la hojarasca. Su carne delicada les otorga gran prestigio culinario. La identificación debe ser experta, especialmente en ejemplares jóvenes, por la existencia de amanitas peligrosas de apariencia confundible."
 });
 
+// Vocabulario CORINE Biòtops para hábitats sin cobertura arbórea (agrícola, urbano, prado,
+// roquedo...): si no hay género de árbol reconocido y el texto describe uno de estos, es
+// incompatible; si no hay ninguna de las dos señales, queda pendiente en vez de adivinar.
+const NON_FOREST_HABITAT_PATTERN = /\b(camps?|conreus?|cultius?|fruiterars?|vinyes?|horts?|pastures?|prats?|herbassars?|urbanitzat[a-z]*|poligon|nucli urba|zona urbana|edificacions?|vies i nusos|comunicacions|roques?|penya-?segats?)\b/;
 function matchVegetation(species, vegetation) {
   if (!vegetation?.covers?.length) return "unknown";
+  const trees = species.trees || [];
   const results = vegetation.covers.map((cover) => {
+    const categories = habitatTreeCategories(cover);
+    if (categories.length) return categories.some((category) => trees.includes(category)) ? "match" : "mismatch";
     const text = cover.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    // Palabras completas: "pi" no debe coincidir, por ejemplo, con "pista".
-    if (/\b(agricol[a-z]*|urban[a-z]*|conreus?|cultiu[a-z]*|cultivo[a-z]*|prats?|prados?|herbassars?|pastures?)\b/.test(text)) return "mismatch";
-    const trees = species.trees || [];
-    const conifers = /\b(aciculifolis|coniferes|coniferas|pi|pins|pinassa)\b/.test(text);
-    const broadleaves = /\b(frondoses|frondosas|alzina|alzines|roure|roures|faig|faigs|castanyers?|freixes?|freixeda|freixeneda|fresnos?|fresnedas?)\b|esclerofil/.test(text);
-    const wantsPines = trees.includes("Pinos");
-    const wantsBroadleaves = trees.some((tree) => ["Encinas", "Robles", "Castaños", "Hayas", "Alcornoques", "Fresnos"].includes(tree));
-    // Evaluar todas las asociaciones antes de excluir especies con varios huéspedes.
-    if ((wantsPines && conifers) || (wantsBroadleaves && broadleaves)) return "match";
-    if ((wantsPines && broadleaves) || (wantsBroadleaves && conifers)) return "mismatch";
+    if (NON_FOREST_HABITAT_PATTERN.test(text)) return "mismatch";
     return "unknown";
   });
-  // Píxeles repetidos se deduplican; cubiertas contradictorias no se fuerzan.
+  // Unidades repetidas se deduplican; cubiertas contradictorias no se fuerzan.
   return results.every((result) => result === results[0]) ? results[0] : "unknown";
 }
 
@@ -508,25 +515,25 @@ const TRANSLATIONS = Object.freeze({
   "Se analizan 28 días completos hasta ayer. El resumen acumula 14 días de lluvia y chubascos, sin nieve. El shock requiere superar el umbral en 48–72 horas; la temporada y la media térmica de tres días limitan el resultado sin borrar el histórico.": "S'analitzen 28 dies complets fins ahir. El resum acumula 14 dies de pluja i ruixats, sense neu. El xoc requereix superar el llindar en 48–72 hores; la temporada i la mitjana tèrmica de tres dies limiten el resultat sense esborrar l'historial.",
   "La humedad favorable requiere lluvia fina (0,2–5 mm/día) o humedad relativa ≥75 %. Alta exige al menos un 60 % de días favorables en incubación. Cuatro días sin 1,5 mm diarios penalizan; cuatro días sin lluvia con máximas ≥25 °C o más de 60 mm en siete días de incubación detienen el episodio.": "La humitat favorable requereix pluja fina (0,2–5 mm/dia) o humitat relativa ≥75 %. Alta exigeix almenys un 60 % de dies favorables en incubació. Quatre dies sense 1,5 mm diaris penalitzen; quatre dies sense pluja amb màximes ≥25 °C o més de 60 mm en set dies d'incubació aturen l'episodi.",
   "El cruce de suelo y vegetación es una heurística cartográfica, no una confirmación de árboles ni de setas. La humedad del aire no mide directamente el agua del suelo. Consulta las condiciones locales y respeta el acceso al terreno.": "L'encreuament de sòl i vegetació és una heurística cartogràfica, no una confirmació d'arbres ni de bolets. La humitat de l'aire no mesura directament l'aigua del sòl. Consulta les condicions locals i respecta l'accés al terreny.",
-  "Fuentes:": "Fonts:", "ICGC Suelos": "ICGC Sòls",
+  "Fuentes:": "Fonts:", "Cartografia dels hàbitats de Catalunya": "Cartografia dels hàbitats de Catalunya",
   "Árboles asociados": "Arbres associats", "Suelo": "Sòl", "Temperatura (media de 3 días)": "Temperatura (mitjana de 3 dies)", "Altitud": "Altitud", "Shock hídrico": "Xoc hídric", "Eclosión": "Brotada", "Otros hábitats": "Altres hàbitats", "Más de ": "Més de ", " mm en 48–72 horas": " mm en 48–72 hores", " días después del shock": " dies després del xoc",
   "Pinos": "Pins", "Hayas": "Faigs", "Robles": "Roures", "Encinas": "Alzines", "Alcornoques": "Sureres", "Fresnos": "Freixes", "Castaños": "Castanyers", "Calcáreo o ácido": "Calcari o àcid", "Calcáreo": "Calcari", "Ácido": "Àcid", "Silíceo / ácido": "Silici / àcid", "Terrenos quemados, según especie": "Terrenys cremats, segons l'espècie",
   "Septiembre–diciembre": "Setembre–desembre", "Septiembre–noviembre": "Setembre–novembre", "Octubre–diciembre": "Octubre–desembre", "Junio–noviembre": "Juny–novembre", "Octubre–enero": "Octubre–gener", "Marzo–mayo": "Març–maig", "Noviembre–enero": "Novembre–gener", "Agosto–octubre": "Agost–octubre",
   "Templada": "Temperada", "Frío moderado": "Fred moderat", "Frío severo": "Fred intens", "Primavera / Templado-Fresco": "Primavera / Temperat-fresc", "sin rango numérico definido": "sense rang numèric definit", "(grupo)": "(grup)",
   "La regla agrupa dos especies; sus preferencias reales pueden diferir.": "La regla agrupa dues espècies; les preferències reals poden diferir.", "Esta ficha se centra en B. edulis; el nombre popular también abarca otros boletos.": "Aquesta fitxa se centra en B. edulis; el nom popular també inclou altres ceps.", "El suelo y la altitud mínima están pendientes de contrastar con fuentes botánicas.": "El sòl i l'altitud mínima estan pendents de contrastar amb fonts botàniques.", "El nombre puede incluir especies próximas de Chroogomphus.": "El nom pot incloure espècies pròximes de Chroogomphus.", "Antes agrupada con L. sanguifluus en una sola ficha; separada con el suelo publicado por iFong (calcari i silici) como referencia cruzada.": "Abans agrupada amb L. sanguifluus en una sola fitxa; separada amb el sòl publicat per iFong (calcari i silici) com a referència creuada.", "Antes agrupada con L. deliciosus en una sola ficha; separada con el suelo publicado por iFong (calcari) como referencia cruzada.": "Abans agrupada amb L. deliciosus en una sola fitxa; separada amb el sòl publicat per iFong (calcari) com a referència creuada.", "La ventana de humedad se mantiene compartida entre las tres variedades de rovelló hasta tener datos propios por especie.": "La finestra d'humitat es manté compartida entre les tres varietats de rovelló fins a tenir dades pròpies per espècie.", "Variedad no incluida en la ficha original, añadida a partir del catálogo publicado por iFong. Su huésped real (avet, abeto) no distingue todavía de Pinos en el catálogo de árboles; se agrupa ahí hasta ampliar esa taxonomía.": "Varietat no inclosa a la fitxa original, afegida a partir del catàleg publicat per iFong. El seu hoste real (avet) encara no es distingeix de Pins al catàleg d'arbres; s'hi agrupa fins ampliar aquesta taxonomia.", "Ficha de un grupo de taxones con ecología variable.": "Fitxa d'un grup de tàxons amb ecologia variable.", "El suelo asociado a las encinas está pendiente de contrastar.": "El sòl associat a les alzines està pendent de contrastar.", "Los enclaves musgosos y umbríos mantienen mejor la humedad.": "Els indrets amb molsa i ombra conserven millor la humitat.", "La regla de suelo es la aportada para este modelo V1.": "La regla de sòl és l'aportada per a aquest model V1.", "La ventana larga requiere consultar más de dos semanas de histórico.": "La finestra llarga requereix consultar més de dues setmanes d'historial.", "Quemados describe un hábitat, no un árbol. No todas las Morchella son pirófilas.": "Cremats descriu un hàbitat, no un arbre. No totes les Morchella són piròfiles.", "Rango de frío aportado: 2–12 °C, ambos extremos incluidos.": "Rang de fred aportat: 2–12 °C, tots dos extrems inclosos.", "Requiere una media estrictamente superior a 20 °C.": "Requereix una mitjana estrictament superior a 20 °C.", "El suelo asociado a las encinas y castaños está pendiente de contrastar.": "El sòl associat a les alzines i castanyers està pendent de contrastar.",
-  "Comprobación del hábitat": "Comprovació de l'hàbitat", "Consultando suelo ICGC…": "Consultant el sòl ICGC…", "Elige un punto para consultar el suelo.": "Tria un punt per consultar el sòl.", "Sin unidad de suelo disponible en este punto.": "Sense unitat de sòl disponible en aquest punt.", "Compatibilidad heurística de suelo y árboles, independiente de la lluvia y la altitud; no confirma presencia de setas.": "Compatibilitat heurística de sòl i arbres, independent de la pluja i l'altitud; no confirma la presència de bolets.",
+  "Comprobación del hábitat": "Comprovació de l'hàbitat", "Consultando hábitat de Catalunya…": "Consultant l'hàbitat de Catalunya…", "Elige un punto para consultar el hábitat.": "Tria un punt per consultar l'hàbitat.", "Sin unidad de hábitat disponible en este punto.": "Sense unitat d'hàbitat disponible en aquest punt.", "Compatibilidad heurística de suelo y árboles, independiente de la lluvia y la altitud; no confirma presencia de setas.": "Compatibilitat heurística de sòl i arbres, independent de la pluja i l'altitud; no confirma la presència de bolets.",
   "Dentro del rango habitual": "Dins del rang habitual", "Fuera del rango habitual": "Fora del rang habitual", "Pendiente de verificar": "Pendent de verificar",
   "Suelo: Óptimo (Terreno adecuado para esta especie)": "Sòl: Òptim (Terreny adequat per a aquesta espècie)", "Suelo: Incompatible (Tipo de terreno no apto)": "Sòl: Incompatible (Tipus de terreny no apte)", "Suelo: Pendiente de verificar (No hay información suficiente del terreno)": "Sòl: Pendent de verificar (No hi ha prou informació del terreny)",
   "Árboles: Compatibles (Presencia del bosque asociado detectada)": "Arbres: Compatibles (Presència del bosc associat detectada)", "Árboles: Incompatibles (La vegetación de la zona no se asocia con esta seta)": "Arbres: Incompatibles (La vegetació de la zona no s'associa amb aquest bolet)", "Árboles: Pendientes de verificar (No hay información suficiente sobre la cubierta)": "Arbres: Pendents de verificar (No hi ha prou informació sobre la coberta)",
-  "Consultando cubierta ICGC…": "Consultant la coberta ICGC…", "Elige un punto para consultar la cubierta.": "Tria un punt per consultar la coberta.", "Cubierta ICGC 2024:": "Coberta ICGC 2024:", "Sin cubierta disponible en este punto.": "Sense coberta disponible en aquest punt.", "Fuente: ICGC · Cobertes del sòl 2024 · CC BY 4.0": "Font: ICGC · Cobertes del sòl 2024 · CC BY 4.0", "Altitud aproximada del modelo:": "Altitud aproximada del model:", "no disponible": "no disponible",
+  "Hábitat detectado:": "Hàbitat detectat:", "Sin cubierta disponible en este punto.": "Sense coberta disponible en aquest punt.", "Fuente: Generalitat de Catalunya · Cartografia dels hàbitats v3 (2019/2024)": "Font: Generalitat de Catalunya · Cartografia dels hàbitats v3 (2019/2024)", "Altitud aproximada del modelo:": "Altitud aproximada del model:", "no disponible": "no disponible",
   "El clima y el hábitat se muestran por separado. La estimación final y el color del mapa bajan a Baja si el suelo o los árboles son incompatibles. La clasificación es orientativa y no confirma presencia de setas.": "El clima i l'hàbitat es mostren per separat. L'estimació final i el color del mapa baixen a Baixa si el sòl o els arbres són incompatibles. La classificació és orientativa i no confirma la presència de bolets.",
   " — restricción biológica por hábitat incompatible": " — restricció biològica per hàbitat incompatible", "Punto ": "Punt ", " · Evaluación hasta ": " · Avaluació fins a ", "Lluvia de los últimos 14 días": "Pluja dels últims 14 dies", "Sin shock": "Sense xoc", "Fin del episodio de lluvia inicial": "Final de l'episodi de pluja inicial", "Lluvia:": "Pluja:", "Temperatura media:": "Temperatura mitjana:", "Máxima:": "Màxima:", " · 14/14 días completos. Histórico analizado: 28 días.": " · 14/14 dies complets. Historial analitzat: 28 dies.", "Estimación orientativa, sin garantía de fructificación.": "Estimació orientativa, sense garantia de fructificació.",
   "Se necesitan 28 días consecutivos completos de lluvia y temperatura.": "Calen 28 dies consecutius complets de pluja i temperatura.", "Episodio cancelado: cuatro días consecutivos sin lluvia y con máximas ≥25 °C.": "Episodi cancel·lat: quatre dies consecutius sense pluja i amb màximes ≥25 °C.", "Episodio detenido: más de 60 mm en siete días de incubación (regla de exceso de agua).": "Episodi aturat: més de 60 mm en set dies d'incubació (regla d'excés d'aigua).", "En incubación: día ": "En incubació: dia ", "; la ventana empieza en el día ": "; la finestra comença el dia ", "Ventana terminada: han pasado ": "Finestra acabada: han passat ", " días desde el shock.": " dies des del xoc.", "Dentro de ventana: día ": "Dins de la finestra: dia ", "Humedad favorable en ": "Humitat favorable en ", " días de incubación.": " dies d'incubació.", "Humedad horaria incompleta: estimación base limitada a Media.": "Humitat horària incompleta: estimació base limitada a Mitjana.", "Suelo seco: más de ": "Sòl sec: més de ", " días completos sin al menos ": " dies complets sense almenys ", " mm/día durante la incubación; penalización de un nivel.": " mm/dia durant la incubació; penalització d'un nivell.", "Criterio térmico cualitativo: no se aplica un umbral numérico no especificado.": "Criteri tèrmic qualitatiu: no s'aplica un llindar numèric no especificat.", "No se detecta un shock superior a ": "No es detecta cap xoc superior a ", "Fuera de temporada: mes actual ": "Fora de temporada: mes actual ", "; meses óptimos: ": "; mesos òptims: ", "Temperatura fuera de rango: media de tres días ": "Temperatura fora de rang: mitjana de tres dies ", ". Requiere ": ". Requereix ", "Restricción biológica: el suelo o la vegetación no son compatibles con esta seta.": "Restricció biològica: el sòl o la vegetació no són compatibles amb aquest bolet.",
-  "Escribe un lugar para buscar.": "Escriu un lloc per cercar.", "Buscando lugar…": "Cercant el lloc…", "Espera un segundo antes de volver a buscar.": "Espera un segon abans de tornar a cercar.", "No se ha encontrado ese lugar en Cataluña. Prueba otro nombre.": "No s'ha trobat aquest lloc a Catalunya. Prova un altre nom.", "No se pudo buscar:": "No s'ha pogut cercar:", "Se ha solicitado abrir WhatsApp con el mensaje preparado. Elige a quién enviarlo.": "S'ha sol·licitat obrir WhatsApp amb el missatge preparat. Tria a qui enviar-lo.", "Selecciona un punto dentro del encuadre de Cataluña.": "Selecciona un punt dins l'enquadrament de Catalunya.", "Consultando 28 días de lluvia, temperatura y humedad…": "Consultant 28 dies de pluja, temperatura i humitat…", "No se puede evaluar el punto:": "No es pot avaluar el punt:", ". Pulsa Consultar punto para reintentar.": ". Prem Consulta el punt per tornar-ho a provar.", "El ICGC no está disponible o no permite esta consulta desde el navegador. El cruce de suelo queda pendiente.": "L'ICGC no està disponible o no permet aquesta consulta des del navegador. L'encreuament de sòl queda pendent.", "No se pudo consultar la cubierta ICGC. Árboles pendientes de verificar; vuelve a consultar el punto.": "No s'ha pogut consultar la coberta ICGC. Arbres pendents de verificar; torna a consultar el punt.",
-  "No se ha podido cargar Leaflet. Puedes consultar las coordenadas y las fichas sin mapa.": "No s'ha pogut carregar Leaflet. Pots consultar les coordenades i les fitxes sense mapa.", "Usar mi ubicación GPS": "Fes servir la meva ubicació GPS", "El GPS requiere HTTPS (o localhost) y un navegador con geolocalización.": "El GPS requereix HTTPS (o localhost) i un navegador amb geolocalització.", "Buscando tu ubicación. Permite el acceso al GPS en el navegador.": "Cercant la teva ubicació. Permet l'accés al GPS al navegador.", " (precisión aproximada: ": " (precisió aproximada: ", "Tu posición GPS": "La teva posició GPS", "Ubicación GPS encontrada": "Ubicació GPS trobada", "Permiso de ubicación denegado. Puedes buscar un lugar o introducir coordenadas.": "Permís d'ubicació denegat. Pots cercar un lloc o introduir coordenades.", "No se pudo obtener tu ubicación. Comprueba el GPS y vuelve a intentarlo.": "No s'ha pogut obtenir la teva ubicació. Comprova el GPS i torna-ho a provar.", "No se han cargado algunas partes del mapa. Puedes usar las coordenadas.": "No s'han carregat algunes parts del mapa. Pots fer servir les coordenades.", "No se ha podido cargar la capa ICGC.": "No s'ha pogut carregar la capa ICGC.", "ICGC 1:250.000: acerca el mapa para ver las unidades de suelo.": "ICGC 1:250.000: apropa el mapa per veure les unitats de sòl.", "Suelos ICGC 1:250.000": "Sòls ICGC 1:250.000", "Suelos 1:250.000": "Sòls 1:250.000",
+  "Escribe un lugar para buscar.": "Escriu un lloc per cercar.", "Buscando lugar…": "Cercant el lloc…", "Espera un segundo antes de volver a buscar.": "Espera un segon abans de tornar a cercar.", "No se ha encontrado ese lugar en Cataluña. Prueba otro nombre.": "No s'ha trobat aquest lloc a Catalunya. Prova un altre nom.", "No se pudo buscar:": "No s'ha pogut cercar:", "Se ha solicitado abrir WhatsApp con el mensaje preparado. Elige a quién enviarlo.": "S'ha sol·licitat obrir WhatsApp amb el missatge preparat. Tria a qui enviar-lo.", "Selecciona un punto dentro del encuadre de Cataluña.": "Selecciona un punt dins l'enquadrament de Catalunya.", "Consultando 28 días de lluvia, temperatura y humedad…": "Consultant 28 dies de pluja, temperatura i humitat…", "No se puede evaluar el punto:": "No es pot avaluar el punt:", ". Pulsa Consultar punto para reintentar.": ". Prem Consulta el punt per tornar-ho a provar.", "La cartografia d'hàbitats no está disponible o no permite esta consulta desde el navegador. El cruce de suelo y árboles queda pendiente.": "La cartografia d'hàbitats no està disponible o no permet aquesta consulta des del navegador. L'encreuament de sòl i arbres queda pendent.",
+  "No se ha podido cargar Leaflet. Puedes consultar las coordenadas y las fichas sin mapa.": "No s'ha pogut carregar Leaflet. Pots consultar les coordenades i les fitxes sense mapa.", "Usar mi ubicación GPS": "Fes servir la meva ubicació GPS", "El GPS requiere HTTPS (o localhost) y un navegador con geolocalización.": "El GPS requereix HTTPS (o localhost) i un navegador amb geolocalització.", "Buscando tu ubicación. Permite el acceso al GPS en el navegador.": "Cercant la teva ubicació. Permet l'accés al GPS al navegador.", " (precisión aproximada: ": " (precisió aproximada: ", "Tu posición GPS": "La teva posició GPS", "Ubicación GPS encontrada": "Ubicació GPS trobada", "Permiso de ubicación denegado. Puedes buscar un lugar o introducir coordenadas.": "Permís d'ubicació denegat. Pots cercar un lloc o introduir coordenades.", "No se pudo obtener tu ubicación. Comprueba el GPS y vuelve a intentarlo.": "No s'ha pogut obtenir la teva ubicació. Comprova el GPS i torna-ho a provar.", "No se han cargado algunas partes del mapa. Puedes usar las coordenadas.": "No s'han carregat algunes parts del mapa. Pots fer servir les coordenades.", "No se ha podido cargar la capa de hábitats.": "No s'ha pogut carregar la capa d'hàbitats.", "Cartografia dels hàbitats: acerca el mapa para ver las unidades.": "Cartografia dels hàbitats: apropa el mapa per veure les unitats.", "Hàbitats de Catalunya": "Hàbitats de Catalunya",
   "La respuesta meteorológica tiene un formato o unidades no válidos.": "La resposta meteorològica té un format o unitats no vàlids.", "Histórico incompleto (": "Historial incomplet (", "). No se calcula una estimación con huecos.": "). No es calcula cap estimació amb buits.", "Límite de consultas alcanzado. Inténtalo más tarde.": "Límit de consultes assolit. Torna-ho a provar més tard.", "El servicio responde HTTP ": "El servei respon HTTP ", "El servicio ha tardado demasiado. Vuelve a consultar el punto.": "El servei ha trigat massa. Torna a consultar el punt.", "Respuesta de búsqueda no reconocida.": "Resposta de cerca no reconeguda.", "El lugar está fuera del área de consulta de Cataluña.": "El lloc és fora de l'àrea de consulta de Catalunya.", "Lugar encontrado": "Lloc trobat", "El enlace contiene coordenadas o una especie no válidas.": "L'enllaç conté coordenades o una espècie no vàlides.", "Para compartir, abre la web publicada o configura su URL pública en public-site-url de index.html.": "Per compartir, obre el web publicat o configura'n l'URL públic a public-site-url d'index.html.",
   "No se ha podido conectar con el servicio. Comprueba la conexión y vuelve a intentarlo.": "No s'ha pogut connectar amb el servei. Comprova la connexió i torna-ho a provar.", "El servicio devolvió datos ilegibles. Vuelve a intentarlo.": "El servei ha retornat dades il·legibles. Torna-ho a provar.",
-  "Bosque de coníferas/pinos": "Bosc de coníferes/pins", "Bosque de frondosas": "Bosc de frondoses", "Terreno agrícola, urbano o prado": "Terreny agrícola, urbà o prat", "Cubierta sin clasificar": "Coberta sense classificar", "Clasificación orientativa:": "Classificació orientativa:", "Mixto (ácido/calcáreo)": "Mixt (àcid/calcari)", "Consultar cartografía original": "Consulta la cartografia original",
+  "Bosque de coníferas/pinos": "Bosc de coníferes/pins", "Bosque de frondosas": "Bosc de frondoses", "Bosque mixto de coníferas y frondosas": "Bosc mixt de coníferes i frondoses", "Terreno agrícola, urbano o prado": "Terreny agrícola, urbà o prat", "Cubierta sin clasificar": "Coberta sense classificar", "Clasificación orientativa:": "Classificació orientativa:", "Mixto (ácido/calcáreo)": "Mixt (àcid/calcari)", "Consultar cartografía original": "Consulta la cartografia original",
   "Acercar": "Apropa", "Alejar": "Allunya", "Capas del mapa": "Capes del mapa", "colaboradores": "col·laboradors"
 });
 const translationPattern = new RegExp(Object.keys(TRANSLATIONS).sort((a, b) => b.length - a.length).map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g");
@@ -546,10 +553,14 @@ function metadataFor(speciesName, place, language) {
   };
 }
 function coverDescription(cover) {
+  const categories = habitatTreeCategories(cover);
+  const conifer = categories.includes("Pinos");
+  const broadleaf = categories.some((category) => category !== "Pinos");
+  if (conifer && broadleaf) return "Bosque mixto de coníferas y frondosas";
+  if (conifer) return "Bosque de coníferas/pinos";
+  if (broadleaf) return "Bosque de frondosas";
   const text = cover.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  if (/agric|urban|conreu|cultiu|prat|prado|herbassar|pastur/.test(text)) return "Terreno agrícola, urbano o prado";
-  if (/aciculifolis|conifer|\b(pi|pins|pinassa)\b/.test(text)) return "Bosque de coníferas/pinos";
-  if (/frondos|esclerofil|alzina|roure|faig|castany/.test(text)) return "Bosque de frondosas";
+  if (NON_FOREST_HABITAT_PATTERN.test(text)) return "Terreno agrícola, urbano o prado";
   return "Cubierta sin clasificar";
 }
 
@@ -609,7 +620,7 @@ function initApp() {
   try { initialPoint = sharedPointFromUrl(window.location.href, MUSHROOMS); }
   catch (error) { setText($("navigation-status"), error.message); }
   const select = $("species-select");
-  const state = { weather: null, soil: null, soilError: "", vegetation: null, vegetationError: "", point: null, placeName: "", request: 0, controller: null };
+  const state = { weather: null, habitat: null, habitatError: "", point: null, placeName: "", request: 0, controller: null };
   const cache = new Map();
   let map = null;
   let marker = null;
@@ -689,7 +700,7 @@ function initApp() {
       const sharedUrl = new URL(pointShareUrl(base, state.point, species().id));
       sharedUrl.searchParams.set("lang", language);
       const link = sharedUrl.toString();
-      const habitat = compareHabitat(species(), state.soil, state.weather?.elevationM, state.vegetation);
+      const habitat = compareHabitat(species(), state.habitat, state.weather?.elevationM, state.habitat);
       const climate = state.weather ? analyzeHumidity(species(), state.weather.days) : { level: "unknown", reasons: [] };
       const final = applyVegetationPenalty(climate, habitat);
       const url = language === "ca" ? new URL("https://wa.me/") : new URL(whatsappShareUrl(link, t(species().name), t(habitatBadgeState(habitat).label), final.level, state.weather?.days.at(-1)?.date));
@@ -765,21 +776,21 @@ function initApp() {
   function renderSoil() {
     const target = $("soil-result");
     target.replaceChildren(node("h3", "Comprobación del hábitat"));
-    if (state.soilError) target.append(node("p", state.soilError, "small"));
-    else if (!state.soil) target.append(node("p", state.point ? "Consultando suelo ICGC…" : "Elige un punto para consultar el suelo.", "small"));
-    else if (!state.soil.units.length) target.append(node("p", "Sin unidad de suelo disponible en este punto.", "small"));
+    if (state.habitatError) target.append(node("p", state.habitatError, "small"));
+    else if (!state.habitat) target.append(node("p", state.point ? "Consultando hábitat de Catalunya…" : "Elige un punto para consultar el hábitat.", "small"));
+    else if (!state.habitat.units.length) target.append(node("p", "Sin unidad de hábitat disponible en este punto.", "small"));
     else {
-      state.soil.units.forEach((unit) => {
+      state.habitat.units.forEach((unit) => {
         const detail = node("details", "");
         const classification = !unit.types ? "Pendiente de verificar" : unit.types.length > 1 ? "Mixto (ácido/calcáreo)" : unit.types[0] === "acidic" ? "Ácido" : "Calcáreo";
-        detail.append(node("summary", `ICGC ${unit.code}`), node("p", `Clasificación orientativa: ${classification}`, "small"));
+        detail.append(node("summary", `${unit.code} · ${unit.name}`), node("p", `Clasificación orientativa: ${classification}`, "small"));
         const source = node("a", "Consultar cartografía original");
-        source.href = "https://www.icgc.cat/ca/Geoinformacio-i-mapes/Mapes/Mapa-de-sols-de-Catalunya";
+        source.href = "https://sig.gencat.cat/visors/habitats_terrestres.html";
         detail.append(source);
         target.append(detail);
       });
     }
-    const match = compareHabitat(species(), state.soil, state.weather?.elevationM, state.vegetation);
+    const match = compareHabitat(species(), state.habitat, state.weather?.elevationM, state.habitat);
     const badge = habitatBadgeState(match);
     $("habitat-badge").className = `badge ${badge.className}`;
     setText($("habitat-badge"), badge.label);
@@ -787,12 +798,10 @@ function initApp() {
     const text = { match: "Dentro del rango habitual", mismatch: "Fuera del rango habitual", unknown: "Pendiente de verificar" };
     const soilText = { match: "Suelo: Óptimo (Terreno adecuado para esta especie)", mismatch: "Suelo: Incompatible (Tipo de terreno no apto)", unknown: "Suelo: Pendiente de verificar (No hay información suficiente del terreno)" };
     target.append(node("p", soilText[match.soil], "small"));
-    target.append(node("p", treeCompatibilityText(species(), state.vegetation, match.trees), "small"));
-    if (state.vegetationError) target.append(node("p", state.vegetationError, "small"));
-    else if (!state.vegetation) target.append(node("p", state.point ? "Consultando cubierta ICGC…" : "Elige un punto para consultar la cubierta.", "small"));
-    else target.append(node("p", state.vegetation.covers.length ? `Cubierta ICGC 2024: ${[...new Set(state.vegetation.covers.map(coverDescription))].join(" · ")}` : "Sin cubierta disponible en este punto.", "small"));
-    const attribution = node("a", "Fuente: ICGC · Cobertes del sòl 2024 · CC BY 4.0");
-    attribution.href = "https://www.icgc.cat/ca/Geoinformacio-i-mapes/Geoinformacio-en-linia-Geoserveis/WMS-Cobertes-del-sol";
+    target.append(node("p", treeCompatibilityText(species(), state.habitat, match.trees), "small"));
+    if (state.habitat) target.append(node("p", state.habitat.covers.length ? `Hábitat detectado: ${[...new Set(state.habitat.covers.map(coverDescription))].join(" · ")}` : "Sin cubierta disponible en este punto.", "small"));
+    const attribution = node("a", "Fuente: Generalitat de Catalunya · Cartografia dels hàbitats v3 (2019/2024)");
+    attribution.href = "https://mediambient.gencat.cat/ca/05_ambits_dactuacio/patrimoni_natural/sistemes_dinformacio/habitats/habitats_terrestres/mapa-dels-habitats-terrestres/cartografia-dels-habitats-versio-3-2025/";
     target.append(attribution);
     if (state.weather) target.append(node("p", `Altitud aproximada del modelo: ${finite(state.weather.elevationM) ? `${number(state.weather.elevationM)} m` : "no disponible"}. ${text[match.altitude]}.`, "small"));
     target.append(node("p", "El clima y el hábitat se muestran por separado. La estimación final y el color del mapa bajan a Baja si el suelo o los árboles son incompatibles. La clasificación es orientativa y no confirma presencia de setas.", "small"));
@@ -802,7 +811,7 @@ function initApp() {
     updateMetadata();
     $("share-whatsapp-btn").disabled = !state.point;
     renderSoil();
-    const habitat = compareHabitat(species(), state.soil, state.weather?.elevationM, state.vegetation);
+    const habitat = compareHabitat(species(), state.habitat, state.weather?.elevationM, state.habitat);
     const climate = state.weather ? analyzeHumidity(species(), state.weather.days) : { level: "unknown", reasons: [] };
     const analysis = applyVegetationPenalty(climate, habitat);
     paint(climate.level, analysis.level);
@@ -857,7 +866,7 @@ function initApp() {
     const controller = new AbortController();
     state.controller = controller;
     const request = ++state.request;
-    Object.assign(state, { point: { lat, lng }, placeName, weather: null, soil: null, soilError: "", vegetation: null, vegetationError: "" });
+    Object.assign(state, { point: { lat, lng }, placeName, weather: null, habitat: null, habitatError: "" });
     $("latitude").value = lat.toFixed(4); $("longitude").value = lng.toFixed(4);
     setText($("analysis-status"), "Consultando 28 días de lluvia, temperatura y humedad…");
     $("weather-result").setAttribute("aria-busy", "true");
@@ -885,29 +894,18 @@ function initApp() {
         if (request === state.request) $("weather-result").setAttribute("aria-busy", "false");
       }
     }
-    async function soilTask() {
+    async function habitatTask() {
       try {
-        const soil = normalizeSoil(await fetchJson(soilInfoUrl(lat, lng), controller.signal));
+        const habitat = normalizeHabitat(await fetchJson(habitatInfoUrl(lat, lng), controller.signal));
         if (request !== state.request) return;
-        state.soil = soil;
+        state.habitat = habitat;
       } catch (error) {
         if (request !== state.request) return;
-        state.soilError = "El ICGC no está disponible o no permite esta consulta desde el navegador. El cruce de suelo queda pendiente.";
+        state.habitatError = "La cartografia d'hàbitats no está disponible o no permite esta consulta desde el navegador. El cruce de suelo y árboles queda pendiente.";
       }
       if (request === state.request) renderResults();
     }
-    async function vegetationTask() {
-      try {
-        const vegetation = normalizeVegetation(await fetchJson(vegetationInfoUrl(lat, lng), controller.signal, "text"));
-        if (request !== state.request) return;
-        state.vegetation = vegetation;
-      } catch (error) {
-        if (request !== state.request) return;
-        state.vegetationError = "No se pudo consultar la cubierta ICGC. Árboles pendientes de verificar; vuelve a consultar el punto.";
-      }
-      if (request === state.request) renderResults();
-    }
-    await Promise.allSettled([weatherTask(), soilTask(), vegetationTask()]);
+    await Promise.allSettled([weatherTask(), habitatTask()]);
   }
 
   select.replaceChildren(...MUSHROOMS.map((item) => { const option = node("option", item.name); option.value = item.id; return option; }));
@@ -979,14 +977,14 @@ function initApp() {
   base.on("tileerror", () => { tileError = true; setText($("map-status"), "No se han cargado algunas partes del mapa. Puedes usar las coordenadas."); });
   base.on("load", () => { if (!tileError) setText($("map-status"), ""); });
   base.addTo(map);
-  const soilLayer = L.tileLayer.wms(SERVICES.soil, {
-    layers: SERVICES.soilLayer, format: "image/png", transparent: true,
-    version: "1.1.1", opacity: 0.45, attribution: '<a href="https://www.icgc.cat/">ICGC</a> · Suelos 1:250.000 · CC BY 4.0'
+  const habitatLayer = L.tileLayer.wms(SERVICES.habitatWms, {
+    layers: SERVICES.habitatLayer, format: "image/png", transparent: true,
+    version: "1.3.0", opacity: 0.45, attribution: '<a href="https://mediambient.gencat.cat/">Generalitat de Catalunya</a> · Cartografia dels hàbitats v3'
   });
-  soilLayer.on("tileerror", () => { setText($("soil-layer-status"), "No se ha podido cargar la capa ICGC."); });
-  map.on("overlayadd", () => { setText($("soil-layer-status"), "ICGC 1:250.000: acerca el mapa para ver las unidades de suelo."); });
+  habitatLayer.on("tileerror", () => { setText($("soil-layer-status"), "No se ha podido cargar la capa de hábitats."); });
+  map.on("overlayadd", () => { setText($("soil-layer-status"), "Cartografia dels hàbitats: acerca el mapa para ver las unidades."); });
   map.on("overlayremove", () => { setText($("soil-layer-status"), ""); });
-  L.control.layers(null, { "Suelos ICGC 1:250.000": soilLayer }, { collapsed: true }).addTo(map);
+  L.control.layers(null, { "Hàbitats de Catalunya": habitatLayer }, { collapsed: true }).addTo(map);
   map.on("click", (event) => consultPoint(event.latlng.lat, event.latlng.lng));
   $("reset-map").disabled = false;
   $("reset-map").addEventListener("click", center);
@@ -997,6 +995,6 @@ function initApp() {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, soilInfoUrl, normalizeSoil, compareHabitat, vegetationInfoUrl, normalizeVegetation, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, estimateConfidence, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription };
+  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, habitatInfoUrl, normalizeHabitat, habitatTreeCategories, habitatSoilTypes, compareHabitat, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, estimateConfidence, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription };
 }
 if (typeof document !== "undefined") initApp();

@@ -37,8 +37,8 @@ test('metadatos usan la especie, el lugar actual y el idioma sin alterar el moto
 });
 
 test('las cubiertas externas se presentan como categorías localizadas sin traducir códigos', () => {
-  assert.equal(translateText(coverDescription("223. Boscos densos d'esclerofil·les i laurifolis"), 'es'), 'Bosque de frondosas');
-  assert.equal(translateText(coverDescription('Boscos densos d’aciculifolis'), 'ca'), 'Bosc de coníferes/pins');
+  assert.equal(translateText(coverDescription('Fagedes calcícoles, xeromesòfiles, de la muntanya mitjana poc plujosa'), 'es'), 'Bosque de frondosas');
+  assert.equal(translateText(coverDescription('Boscos de pi roig (Pinus sylvestris), calcícoles i xeròfils'), 'ca'), 'Bosc de coníferes/pins');
   assert.equal(coverDescription('Prats i herbassars'), 'Terreno agrícola, urbano o prado');
   assert.equal(coverDescription('Descripció desconeguda'), 'Cubierta sin clasificar');
   assert.equal(translateText('ICGC S21', 'ca'), 'ICGC S21');

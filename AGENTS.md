@@ -7,7 +7,7 @@ El nombre oficial es **Buscador de Setas en Cataluña**. Web estática móvil, s
 - `index.html`: estructura accesible, selector, mapa, resultados y `#adsense-container`.
 - `styles.css`: estilos adaptables y estados Baja, Media, Alta y Sin evaluar.
 - `mushrooms.js`: doce especies V1 (incluye tres variedades de rovelló separadas desde v1.2.0), unidades, umbrales y procedencia.
-- `app.js`: Leaflet/OpenStreetMap, Open-Meteo, ICGC y algoritmo de humedad.
+- `app.js`: Leaflet/OpenStreetMap, Open-Meteo, WFS de hàbitats de la Generalitat y algoritmo de humedad.
 - `tests/`: regresiones del algoritmo, normalización, traducciones y metadatos.
 
 ## Desarrollo y hosting
@@ -28,7 +28,7 @@ Open-Meteo consulta 28 días completos hasta ayer en `Europe/Madrid`; muestra ac
 
 Detecta shocks estrictamente superiores al umbral en 48–72 horas, sin reiniciar frentes continuos. Evalúa incubación, sequía, exceso semanal y estacionalidad. Los criterios térmicos y de humedad configurables son supuestos, no citas bibliográficas.
 
-ICGC usa `10_STAX_PA`. Completa la correspondencia de suelos únicamente con evidencia; unidades mixtas y árboles desconocidos siguen pendientes. El mapa colorea estimaciones meteorológicas puntuales, no áreas confirmadas.
+Hábitat y suelo usan un único WFS público de la Generalitat (`sig.gencat.cat/ows/HABITATS/wfs`, capa `HABITATS_TERRESTPOL`, Cartografia dels hàbitats v3): consulta puntual exacta (`INTERSECTS` sobre el punto, no una caja), sin la ambigüedad de mezclar parches vecinos que sí tenía el WMS del ICGC usado hasta la v1.2.0. El árbol dominante se extrae del género/especie en latín entre paréntesis del propio texto (más fiable que el nombre común en catalán, que varía por comarca); el carácter del suelo, de las palabras "calcícola"/"silicícola" que ya trae la descripción del hábitat. Completa la correspondencia únicamente con evidencia; sin esas palabras o sin género reconocido, queda pendiente. El mapa colorea estimaciones meteorológicas puntuales, no áreas confirmadas.
 
 ## Validación y contribuciones
 
