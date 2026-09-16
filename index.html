@@ -67,17 +67,14 @@
         </section>
         <section class="results card" aria-labelledby="result-heading">
           <div class="result-heading">
-            <h2 id="result-heading">Ventana óptima de humedad</h2>
-            <div class="result-badges">
-              <div class="signal-box"><span class="small">Clima</span><span id="probability" class="badge unknown" aria-label="Probabilidad meteorológica: Sin evaluar">Sin evaluar</span></div>
-              <div class="signal-box"><span class="small">Terreno</span><span id="habitat-badge" class="badge unknown" role="status">Hábitat pendiente</span></div>
-              <div class="signal-box"><span class="small">Confianza</span><span id="confidence-badge" class="badge unknown" role="status">Sin evaluar</span></div>
-            </div>
+            <h2 class="eyebrow" id="result-heading">Probabilidad de encontrarla</h2>
+            <p id="final-verdict" class="verdict unknown" role="status" aria-live="polite">Sin evaluar</p>
+            <p id="verdict-drivers" class="drivers">Elige una seta y un punto del mapa.</p>
+            <p id="confidence-note" class="small caveat" role="status" hidden></p>
           </div>
+          <p id="analysis-status" role="status">Consulta un punto para analizar las condiciones recientes.</p>
           <button id="share-whatsapp-btn" type="button" disabled>🟢 Compartir por WhatsApp</button>
           <p id="share-status" class="small" role="status"></p>
-          <p id="final-estimate" role="status">Estimación final: Sin evaluar</p>
-          <p id="analysis-status" role="status">Consulta un punto para analizar las condiciones recientes.</p>
           <div id="weather-result" aria-live="polite">
             <div id="weather-metrics" class="metrics"></div>
             <section id="calendar-panel" aria-labelledby="calendar-heading">

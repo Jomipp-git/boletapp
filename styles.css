@@ -45,7 +45,8 @@ dl { margin: 1rem 0 0; }
 dt { color: var(--muted); font-size: .875rem; font-weight: 650; }
 dd { margin: .1rem 0 0; }
 .small, .species-note { font-size: .875rem; color: var(--muted); }
-.map-heading, .result-heading { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: space-between; align-items: center; }
+.map-heading { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: space-between; align-items: center; }
+.result-heading { display: block; }
 .map-heading { padding: 1rem; }
 .map-heading h2, .result-heading h2 { margin: 0; }
 button { min-height: 48px; padding: .6rem .85rem; color: white; background: var(--forest); border: none; border-radius: .45rem; cursor: pointer; }
@@ -62,10 +63,11 @@ button:disabled { opacity: .5; cursor: default; }
 .unknown { --status-color: var(--unknown); }
 .dot { background: var(--status-color); }
 .badge { color: var(--status-color); background: var(--soft-bg); border: 1px solid currentColor; border-radius: 2rem; padding: .15rem .65rem; font-weight: 750; white-space: nowrap; }
-.result-badges { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-#habitat-badge.optimal { color: #063b1c; background: #4ade80; border-color: #15803d; }
-/* Árbol compatible pero suelo no declarado en la cartografía: verde apagado, entre Óptimo y pendiente. */
-#habitat-badge.favorable { color: #14532d; background: #bbf7d0; border-color: #4ade80; }
+/* El veredicto manda visualmente: es la respuesta, no una métrica intermedia más. */
+.verdict { display: inline-block; margin: .25rem 0 .1rem; font-size: clamp(1.6rem, 6vw, 2.1rem); font-weight: 750; line-height: 1.1;
+  color: var(--status-color); border-bottom: 4px solid currentColor; padding-bottom: .1rem; }
+.drivers { margin: .35rem 0 0; font-weight: 600; }
+.caveat { margin: .3rem 0 0; color: var(--muted); }
 .point-form { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: .75rem; padding: 1rem 1rem 0; }
 .point-form button { grid-column: 1 / -1; }
 .point-form label { font-size: .875rem; }
@@ -98,8 +100,6 @@ footer { border-top: 1px solid var(--line); font-size: .875rem; color: var(--mut
   .catalog, .results { padding: 1rem; }
 }
 
-.signal-box { display: flex; flex-direction: column; align-items: flex-start; gap: .35rem; padding: .75rem; border: 1px solid var(--line); border-radius: .6rem; }
-#habitat-badge.low { color: #fff; background: #b42318; border-color: #b42318; }
 
 .mini-calendar { display: flex; max-width: 100%; min-width: 0; gap: .35rem; overflow-x: auto; padding: .25rem 0 .75rem; }
 .calendar-day { flex: 0 0 auto; min-width: 4.5rem; min-height: 6rem; padding: .5rem .35rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .15rem; border-radius: .5rem; border: 1px solid transparent; font-size: .75rem; white-space: nowrap; }
@@ -154,6 +154,6 @@ input, select, button { border-radius: .65rem; }
 :root[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.75) saturate(.7); }
 :root[data-theme="dark"] .calendar-normal { background: #394247; color: #edf0f2; border-color: #536169; }
 :root[data-theme="dark"] #map { background: #252e30; }
-.signal-box, .badge { max-width: 100%; }
+.badge { max-width: 100%; }
 .badge { white-space: normal; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }

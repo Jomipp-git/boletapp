@@ -601,7 +601,7 @@ const TRANSLATIONS = Object.freeze({
   "Suelo, árboles y humedad horaria disponibles para este punto.": "Sòl, arbres i humitat horària disponibles per a aquest punt.",
   "El color evalúa el punto consultado, no todo el bosque. No representa avistamientos.": "El color avalua el punt consultat, no tot el bosc. No representa observacions.",
   "Latitud": "Latitud", "Longitud": "Longitud", "Consultar punto": "Consulta el punt", "Puedes usar las coordenadas sin interactuar con el mapa. El área de consulta es un encuadre aproximado de Cataluña.": "Pots fer servir les coordenades sense interactuar amb el mapa. L'àrea de consulta és un enquadrament aproximat de Catalunya.",
-  "Ventana óptima de humedad": "Finestra òptima d'humitat", "Terreno": "Terreny", "Baja": "Baixa", "Media": "Mitjana", "Alta": "Alta", "Sin evaluar": "Sense avaluar", "Hábitat pendiente": "Hàbitat pendent", "Hábitat Óptimo": "Hàbitat Òptim", "Hábitat Favorable": "Hàbitat Favorable", "Hábitat Incompatible": "Hàbitat Incompatible",
+  "Probabilidad de encontrarla": "Probabilitat de trobar-la", "Probabilidad de encontrarla: ": "Probabilitat de trobar-la: ", "Elige una seta y un punto del mapa.": "Tria un bolet i un punt del mapa.", "Lluvia favorable": "Pluja favorable", "Lluvia justa": "Pluja justa", "Sin lluvia suficiente": "Sense pluja suficient", "Sin datos de lluvia": "Sense dades de pluja", "bosque y suelo compatibles": "bosc i sòl compatibles", "bosque compatible": "bosc compatible", "bosque no compatible": "bosc no compatible", "bosque sin confirmar": "bosc sense confirmar", "Confianza alta: ": "Confiança alta: ", "Confianza media: ": "Confiança mitjana: ", "Confianza baja: ": "Confiança baixa: ", "Ventana óptima de humedad": "Finestra òptima d'humitat", "Terreno": "Terreny", "Baja": "Baixa", "Media": "Mitjana", "Alta": "Alta", "Sin evaluar": "Sense avaluar", "Hábitat pendiente": "Hàbitat pendent", "Hábitat Óptimo": "Hàbitat Òptim", "Hábitat Favorable": "Hàbitat Favorable", "Hábitat Incompatible": "Hàbitat Incompatible",
   "Compartir por WhatsApp": "Comparteix per WhatsApp", "Estimación final:": "Estimació final:", "estimación final": "estimació final", "Consulta un punto para analizar las condiciones recientes.": "Consulta un punt per analitzar les condicions recents.",
   "Historial de condiciones diarias (Últimos 28 días)": "Historial de condicions diàries (Últims 28 dies)", "Consulta un punto para ver los últimos 28 días completos, desde ayer hacia atrás.": "Consulta un punt per veure els últims 28 dies complets, des d'ahir cap enrere.",
   "Calor / Seco / Viento:": "Calor / Sec / Vent:", "Seco": "Sec", "Viento": "Vent", "Normal (Gris):": "Normal (Gris):",
@@ -789,6 +789,8 @@ function initApp() {
   });
   const bounds = [[40.5, 0.15], [42.9, 3.35]];
   const names = { low: "Baja", medium: "Media", high: "Alta", unknown: "Sin evaluar" };
+  const CLIMATE_DRIVER = { high: "Lluvia favorable", medium: "Lluvia justa", low: "Sin lluvia suficiente", unknown: "Sin datos de lluvia" };
+  const TERRAIN_DRIVER = { optimal: "bosque y suelo compatibles", favorable: "bosque compatible", low: "bosque no compatible", unknown: "bosque sin confirmar" };
   const colors = { low: "#b33f32", medium: "#956000", high: "#19754b", unknown: "#64748b" };
   const number = (value) => new Intl.NumberFormat(language === "ca" ? "ca-ES" : "es-ES", { maximumFractionDigits: 1 }).format(value);
   const node = (tag, text, className) => {
@@ -809,8 +811,8 @@ function initApp() {
       const habitat = compareHabitat(species(), state.habitat, state.weather?.elevationM, state.habitat);
       const climate = state.weather ? analyzeHumidity(species(), state.weather.days) : { level: "unknown", reasons: [] };
       const final = applyVegetationPenalty(climate, habitat);
-      const url = language === "ca" ? new URL("https://wa.me/") : new URL(whatsappShareUrl(link, t(species().name), t(habitatBadgeState(habitat).label), final.level, state.weather?.days.at(-1)?.date));
-      if (language === "ca") url.searchParams.set("text", `🍄 Mira aquest punt per buscar bolets a Catalunya! Per a ${species().name}: ${t(habitatBadgeState(habitat).label)}. Estimació final: ${t(names[final.level])}. És orientatiu, no garanteix trobar bolets. Consulta el mapa i el calendari aquí: ${link}`);
+      const url = language === "ca" ? new URL("https://wa.me/") : new URL(whatsappShareUrl(link, t(species().name), t(TERRAIN_DRIVER[habitatBadgeState(habitat).className]), final.level, state.weather?.days.at(-1)?.date));
+      if (language === "ca") url.searchParams.set("text", `🍄 Mira aquest punt per buscar bolets a Catalunya! Per a ${species().name}: ${t(TERRAIN_DRIVER[habitatBadgeState(habitat).className])}. Estimació final: ${t(names[final.level])}. És orientatiu, no garanteix trobar bolets. Consulta el mapa i el calendari aquí: ${link}`);
       // Solo prepara el mensaje: el usuario elige destinatario y confirma el envío.
       window.open(url.toString(), "_blank", "noopener,noreferrer");
       setText($("share-status"), "Se ha solicitado abrir WhatsApp con el mensaje preparado. Elige a quién enviarlo.");
@@ -825,9 +827,6 @@ function initApp() {
   }
 
   function paint(level, finalLevel = level) {
-    $("probability").className = `badge ${level}`;
-    setText($("probability"), names[level]);
-    $("probability").setAttribute("aria-label", t(`Probabilidad meteorológica: ${names[level]}`));
     if (marker) {
       marker.setStyle({ color: colors[finalLevel], fillColor: colors[finalLevel] });
       marker.bindTooltip(node("span", `${species().name}: ${names[finalLevel]} · estimación final`));
@@ -898,10 +897,6 @@ function initApp() {
       });
     }
     const match = compareHabitat(species(), state.habitat, state.weather?.elevationM, state.habitat);
-    const badge = habitatBadgeState(match);
-    $("habitat-badge").className = `badge ${badge.className}`;
-    setText($("habitat-badge"), badge.label);
-    $("habitat-badge").title = t("Compatibilidad heurística de suelo y árboles, independiente de la lluvia y la altitud; no confirma presencia de setas.");
     const text = { match: "Dentro del rango habitual", mismatch: "Fuera del rango habitual", unknown: "Pendiente de verificar" };
     const soilText = { match: "Suelo: Óptimo (Terreno adecuado para esta especie)", mismatch: "Suelo: Incompatible (Tipo de terreno no apto)", unknown: "Suelo: Pendiente de verificar (No hay información suficiente del terreno)" };
     target.append(node("p", soilText[match.soil], "small"));
@@ -946,12 +941,20 @@ function initApp() {
     const climate = state.weather ? analyzeHumidity(species(), state.weather.days) : { level: "unknown", reasons: [] };
     const analysis = applyVegetationPenalty(climate, habitat);
     paint(climate.level, analysis.level);
-    setText($("final-estimate"), `Estimación final: ${names[analysis.level]}${habitat.soil === "mismatch" || habitat.trees === "mismatch" ? " — restricción biológica por hábitat incompatible" : ""}`);
+    // Un solo veredicto manda; el clima y el terreno pasan a explicarlo en lenguaje normal en
+    // vez de competir con él como distintivos propios (antes se leía "Baja" en dos sitios
+    // distintos queriendo decir cosas distintas).
+    $("final-verdict").className = `verdict ${analysis.level}`;
+    setText($("final-verdict"), names[analysis.level]);
+    $("final-verdict").setAttribute("aria-label", t(`Probabilidad de encontrarla: ${names[analysis.level]}`));
+    setText($("verdict-drivers"), state.point
+      ? `${CLIMATE_DRIVER[climate.level]} · ${TERRAIN_DRIVER[habitatBadgeState(habitat).className]}`
+      : "Elige una seta y un punto del mapa.");
     const confidence = estimateConfidence(climate, habitat);
-    $("confidence-badge").className = `badge ${confidence.level}`;
-    setText($("confidence-badge"), names[confidence.level]);
-    $("confidence-badge").title = confidence.reasons.map((reason) => t(reason)).join(" ");
-    $("confidence-badge").setAttribute("aria-label", t(`Confianza del dato: ${names[confidence.level]}`));
+    // El aviso solo aparece cuando hay algo que avisar, y dice el motivo: un "Media" suelto
+    // no le sirve de nada a quien va a decidir si sube al bosque.
+    $("confidence-note").hidden = confidence.level === "high" || !state.point;
+    setText($("confidence-note"), `Confianza ${names[confidence.level].toLowerCase()}: ${confidence.reasons.join(" ")}`);
     if (!state.weather) {
       for (const id of ["weather-metrics", "mini-calendar", "weather-period", "weather-reasons", "weather-shock"]) $(id).replaceChildren();
       $("calendar-empty").hidden = false;
