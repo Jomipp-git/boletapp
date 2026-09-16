@@ -511,6 +511,37 @@ test('descarte tardío conserva los campos del episodio previamente favorable', 
   }
 });
 
+const { cleanScientificName, sightingsUrl, normalizeSightings, sightingsViewUrl } = require('../app.js');
+test('nombre científico se limpia de anotaciones del catálogo antes de consultar GBIF', () => {
+  assert.equal(cleanScientificName('Cantharellus cibarius (grupo)'), 'Cantharellus cibarius');
+  assert.equal(cleanScientificName('Morchella spp.'), 'Morchella');
+  assert.equal(cleanScientificName('Boletus edulis'), 'Boletus edulis');
+});
+test('URL de avistamientos consulta por punto y radio, con basisOfRecord repetido', () => {
+  const url = new URL(sightingsUrl('Cantharellus cibarius (grupo)', 42.1, 1.8));
+  assert.equal(url.searchParams.get('scientificName'), 'Cantharellus cibarius');
+  assert.equal(url.searchParams.get('geoDistance'), '42.1,1.8,15km');
+  assert.equal(url.searchParams.get('hasCoordinate'), 'true');
+  assert.deepEqual(url.searchParams.getAll('basisOfRecord'), ['HUMAN_OBSERVATION', 'PRESERVED_SPECIMEN', 'OCCURRENCE']);
+  assert.equal(new URL(sightingsUrl('Boletus edulis', 42.1, 1.8, 30)).searchParams.get('geoDistance'), '42.1,1.8,30km');
+});
+test('normalizeSightings extrae recuento y fecha más reciente sin asumir orden del servidor', () => {
+  assert.throws(() => normalizeSightings({}), /no reconocida/);
+  assert.throws(() => normalizeSightings({ count: 3 }), /no reconocida/);
+  const empty = normalizeSightings({ count: 0, results: [] });
+  assert.deepEqual(empty, { count: 0, radiusKm: 15, mostRecentDate: null });
+  const withDates = normalizeSightings({ count: 42, results: [
+    { eventDate: '2024-09-12T10:00:00' }, { eventDate: '2026-08-20T11:59:53' }, { eventDate: '2015-09-09' }, {}
+  ] });
+  assert.equal(withDates.count, 42);
+  assert.equal(withDates.mostRecentDate, '2026-08-20');
+});
+test('enlace a GBIF usa el nombre científico limpio, sin coordenadas personales', () => {
+  const url = new URL(sightingsViewUrl('Morchella spp.'));
+  assert.equal(url.hostname, 'www.gbif.org');
+  assert.equal(url.searchParams.get('q'), 'Morchella');
+});
+
 const { geocodingUrl, firstPlace } = require('../app.js');
 test('búsqueda geográfica limita a Cataluña y codifica texto sin alterar parámetros', () => {
   const url = new URL(geocodingUrl(' Vielha & Viladrau '));

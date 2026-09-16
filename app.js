@@ -23,6 +23,10 @@ const SERVICES = Object.freeze({
   habitat: "https://sig.gencat.cat/ows/HABITATS/wfs",
   habitatWms: "https://sig.gencat.cat/ows/HABITATS/wms",
   habitatLayer: "HABITATS:HABITATS_TERRESTPOL",
+  // GBIF: avistamientos históricos reales (iNaturalist y otros), públicos y sin clave.
+  // Contexto informativo aparte del cálculo; nunca cambia el nivel de la estimación.
+  gbif: "https://api.gbif.org/v1/occurrence/search",
+  gbifRadiusKm: 15,
   timeoutMs: 20000,
   cacheMs: 15 * 60 * 1000
 });
@@ -279,6 +283,36 @@ function normalizeHabitat(payload) {
   return { units, types: allTypes.length ? allTypes : null, covers };
 }
 
+// "(grupo)" y "spp." son anotaciones del catálogo V1, no parte del binomio que entiende GBIF.
+function cleanScientificName(scientificName) {
+  return scientificName.replace(/\s*\(grupo\)\s*$/i, "").replace(/\s+spp\.?\s*$/i, "").trim();
+}
+
+function sightingsUrl(scientificName, lat, lng, radiusKm = SERVICES.gbifRadiusKm) {
+  const url = new URL(SERVICES.gbif);
+  const params = new URLSearchParams({
+    scientificName: cleanScientificName(scientificName),
+    geoDistance: `${lat},${lng},${radiusKm}km`,
+    hasCoordinate: "true", limit: 20
+  });
+  // Repetido a propósito: GBIF ignora silenciosamente una lista separada por comas.
+  for (const basis of ["HUMAN_OBSERVATION", "PRESERVED_SPECIMEN", "OCCURRENCE"]) params.append("basisOfRecord", basis);
+  url.search = params;
+  return url.toString();
+}
+
+function normalizeSightings(payload) {
+  if (!finite(payload.count) || !Array.isArray(payload.results)) throw new Error("Respuesta de avistamientos no reconocida.");
+  const dates = payload.results.map((record) => record.eventDate).filter((date) => typeof date === "string").map((date) => date.slice(0, 10)).sort();
+  return { count: payload.count, radiusKm: SERVICES.gbifRadiusKm, mostRecentDate: dates.at(-1) || null };
+}
+
+function sightingsViewUrl(scientificName) {
+  const url = new URL("https://www.gbif.org/occurrence/search");
+  url.searchParams.set("q", cleanScientificName(scientificName));
+  return url.toString();
+}
+
 // Textos editoriales informativos; no son claves de identificación.
 const SEO_DESCRIPTIONS = Object.freeze({
   "rovello-pinetell": "El pinetell (Lactarius deliciosus) destaca por su sombrero anaranjado con tonos claros y su carne que vira al verde al cortarla, más suave que la del esclatasangs. En los pinares de Cataluña suele aparecer entre acículas y hojarasca, a veces parcialmente oculto bajo el suelo superficial. Las lluvias de otoño favorecen su aparición cuando la humedad persiste. Es un habitual de la cocina catalana, especialmente en preparaciones a la brasa y guisos que aprovechan su textura y aroma forestal.",
@@ -526,6 +560,7 @@ const TRANSLATIONS = Object.freeze({
   "Suelo: Óptimo (Terreno adecuado para esta especie)": "Sòl: Òptim (Terreny adequat per a aquesta espècie)", "Suelo: Incompatible (Tipo de terreno no apto)": "Sòl: Incompatible (Tipus de terreny no apte)", "Suelo: Pendiente de verificar (No hay información suficiente del terreno)": "Sòl: Pendent de verificar (No hi ha prou informació del terreny)",
   "Árboles: Compatibles (Presencia del bosque asociado detectada)": "Arbres: Compatibles (Presència del bosc associat detectada)", "Árboles: Incompatibles (La vegetación de la zona no se asocia con esta seta)": "Arbres: Incompatibles (La vegetació de la zona no s'associa amb aquest bolet)", "Árboles: Pendientes de verificar (No hay información suficiente sobre la cubierta)": "Arbres: Pendents de verificar (No hi ha prou informació sobre la coberta)",
   "Hábitat detectado:": "Hàbitat detectat:", "Sin cubierta disponible en este punto.": "Sense coberta disponible en aquest punt.", "Fuente: Generalitat de Catalunya · Cartografia dels hàbitats v3 (2019/2024)": "Font: Generalitat de Catalunya · Cartografia dels hàbitats v3 (2019/2024)", "Altitud aproximada del modelo:": "Altitud aproximada del model:", "no disponible": "no disponible",
+  "Avistamientos históricos (GBIF)": "Observacions històriques (GBIF)", "Elige un punto para consultar avistamientos.": "Tria un punt per consultar observacions.", "Consultando avistamientos de GBIF…": "Consultant observacions de GBIF…", "Avistamientos de ": "Observacions de ", " en GBIF (radio ": " a GBIF (radi ", " km): ": " km): ", "Más reciente: ": "Més recent: ", "Ver registros en GBIF": "Veure registres a GBIF", "Son registros históricos de otros años, no confirman que haya setas ahora mismo ni en este punto exacto. No sustituyen al clima ni al hábitat en la estimación final.": "Són registres històrics d'altres anys, no confirmen que hi hagi bolets ara mateix ni en aquest punt exacte. No substitueixen el clima ni l'hàbitat en l'estimació final.", "Fuente: GBIF.org": "Font: GBIF.org", "No se pudieron consultar los avistamientos de GBIF. Vuelve a intentarlo.": "No s'han pogut consultar les observacions de GBIF. Torna-ho a provar.",
   "El clima y el hábitat se muestran por separado. La estimación final y el color del mapa bajan a Baja si el suelo o los árboles son incompatibles. La clasificación es orientativa y no confirma presencia de setas.": "El clima i l'hàbitat es mostren per separat. L'estimació final i el color del mapa baixen a Baixa si el sòl o els arbres són incompatibles. La classificació és orientativa i no confirma la presència de bolets.",
   " — restricción biológica por hábitat incompatible": " — restricció biològica per hàbitat incompatible", "Punto ": "Punt ", " · Evaluación hasta ": " · Avaluació fins a ", "Lluvia de los últimos 14 días": "Pluja dels últims 14 dies", "Sin shock": "Sense xoc", "Fin del episodio de lluvia inicial": "Final de l'episodi de pluja inicial", "Lluvia:": "Pluja:", "Temperatura media:": "Temperatura mitjana:", "Máxima:": "Màxima:", " · 14/14 días completos. Histórico analizado: 28 días.": " · 14/14 dies complets. Historial analitzat: 28 dies.", "Estimación orientativa, sin garantía de fructificación.": "Estimació orientativa, sense garantia de fructificació.",
   "Se necesitan 28 días consecutivos completos de lluvia y temperatura.": "Calen 28 dies consecutius complets de pluja i temperatura.", "Episodio cancelado: cuatro días consecutivos sin lluvia y con máximas ≥25 °C.": "Episodi cancel·lat: quatre dies consecutius sense pluja i amb màximes ≥25 °C.", "Episodio detenido: más de 60 mm en siete días de incubación (regla de exceso de agua).": "Episodi aturat: més de 60 mm en set dies d'incubació (regla d'excés d'aigua).", "En incubación: día ": "En incubació: dia ", "; la ventana empieza en el día ": "; la finestra comença el dia ", "Ventana terminada: han pasado ": "Finestra acabada: han passat ", " días desde el shock.": " dies des del xoc.", "Dentro de ventana: día ": "Dins de la finestra: dia ", "Humedad favorable en ": "Humitat favorable en ", " días de incubación.": " dies d'incubació.", "Humedad horaria incompleta: estimación base limitada a Media.": "Humitat horària incompleta: estimació base limitada a Mitjana.", "Suelo seco: más de ": "Sòl sec: més de ", " días completos sin al menos ": " dies complets sense almenys ", " mm/día durante la incubación; penalización de un nivel.": " mm/dia durant la incubació; penalització d'un nivell.", "Criterio térmico cualitativo: no se aplica un umbral numérico no especificado.": "Criteri tèrmic qualitatiu: no s'aplica un llindar numèric no especificat.", "No se detecta un shock superior a ": "No es detecta cap xoc superior a ", "Fuera de temporada: mes actual ": "Fora de temporada: mes actual ", "; meses óptimos: ": "; mesos òptims: ", "Temperatura fuera de rango: media de tres días ": "Temperatura fora de rang: mitjana de tres dies ", ". Requiere ": ". Requereix ", "Restricción biológica: el suelo o la vegetación no son compatibles con esta seta.": "Restricció biològica: el sòl o la vegetació no són compatibles amb aquest bolet.",
@@ -620,7 +655,9 @@ function initApp() {
   try { initialPoint = sharedPointFromUrl(window.location.href, MUSHROOMS); }
   catch (error) { setText($("navigation-status"), error.message); }
   const select = $("species-select");
-  const state = { weather: null, habitat: null, habitatError: "", point: null, placeName: "", request: 0, controller: null };
+  const state = { weather: null, habitat: null, habitatError: "", sightings: null, sightingsError: "", point: null, placeName: "", request: 0, controller: null };
+  let sightingsRequest = 0;
+  let sightingsController = null;
   const cache = new Map();
   let map = null;
   let marker = null;
@@ -771,6 +808,7 @@ function initApp() {
       node("p", language === "ca" ? SEO_CA[item.id] : SEO_DESCRIPTIONS[item.id])
     );
     renderResults();
+    refreshSightings();
   }
 
   function renderSoil() {
@@ -807,10 +845,34 @@ function initApp() {
     target.append(node("p", "El clima y el hábitat se muestran por separado. La estimación final y el color del mapa bajan a Baja si el suelo o los árboles son incompatibles. La clasificación es orientativa y no confirma presencia de setas.", "small"));
   }
 
+  function renderSightings() {
+    const target = $("sightings-result");
+    target.replaceChildren(node("h3", "Avistamientos históricos (GBIF)"));
+    if (state.sightingsError) target.append(node("p", state.sightingsError, "small"));
+    else if (!state.point) target.append(node("p", "Elige un punto para consultar avistamientos.", "small"));
+    else if (!state.sightings) target.append(node("p", "Consultando avistamientos de GBIF…", "small"));
+    else {
+      const { count, radiusKm, mostRecentDate } = state.sightings;
+      target.append(node("p", `Avistamientos de ${species().scientificName} en GBIF (radio ${radiusKm} km): ${number(count)}.`, "small"));
+      if (mostRecentDate) target.append(node("p", `Más reciente: ${mostRecentDate}.`, "small"));
+      if (count > 0) {
+        const link = node("a", "Ver registros en GBIF");
+        link.href = sightingsViewUrl(species().scientificName);
+        link.target = "_blank"; link.rel = "noopener noreferrer";
+        target.append(link);
+      }
+    }
+    target.append(node("p", "Son registros históricos de otros años, no confirman que haya setas ahora mismo ni en este punto exacto. No sustituyen al clima ni al hábitat en la estimación final.", "small"));
+    const attribution = node("a", "Fuente: GBIF.org");
+    attribution.href = "https://www.gbif.org/";
+    target.append(attribution);
+  }
+
   function renderResults() {
     updateMetadata();
     $("share-whatsapp-btn").disabled = !state.point;
     renderSoil();
+    renderSightings();
     const habitat = compareHabitat(species(), state.habitat, state.weather?.elevationM, state.habitat);
     const climate = state.weather ? analyzeHumidity(species(), state.weather.days) : { level: "unknown", reasons: [] };
     const analysis = applyVegetationPenalty(climate, habitat);
@@ -855,6 +917,29 @@ function initApp() {
     setText($("weather-shock"), analysis.shockDate ? `Shock: ${number(analysis.shockMm)} mm en ${analysis.shockHours} h. Estimación orientativa, sin garantía de fructificación.` : "");
   }
 
+  // Independiente de weatherTask/habitatTask: depende de la especie elegida, no solo del punto,
+  // así que también se dispara al cambiar de seta (ver renderSpecies), no solo al consultar.
+  async function refreshSightings() {
+    sightingsController?.abort();
+    if (!state.point) { state.sightings = null; state.sightingsError = ""; renderSightings(); return; }
+    const controller = new AbortController();
+    sightingsController = controller;
+    const request = ++sightingsRequest;
+    state.sightings = null;
+    state.sightingsError = "";
+    renderSightings();
+    const { lat, lng } = state.point;
+    try {
+      const sightings = normalizeSightings(await fetchJson(sightingsUrl(species().scientificName, lat, lng), controller.signal));
+      if (request !== sightingsRequest) return;
+      state.sightings = sightings;
+    } catch (error) {
+      if (request !== sightingsRequest) return;
+      state.sightingsError = "No se pudieron consultar los avistamientos de GBIF. Vuelve a intentarlo.";
+    }
+    if (request === sightingsRequest) renderSightings();
+  }
+
   async function consultPoint(lat, lng, placeName = "") {
     cancelNavigation();
     setText($("share-status"), "");
@@ -866,7 +951,7 @@ function initApp() {
     const controller = new AbortController();
     state.controller = controller;
     const request = ++state.request;
-    Object.assign(state, { point: { lat, lng }, placeName, weather: null, habitat: null, habitatError: "" });
+    Object.assign(state, { point: { lat, lng }, placeName, weather: null, habitat: null, habitatError: "", sightings: null, sightingsError: "" });
     $("latitude").value = lat.toFixed(4); $("longitude").value = lng.toFixed(4);
     setText($("analysis-status"), "Consultando 28 días de lluvia, temperatura y humedad…");
     $("weather-result").setAttribute("aria-busy", "true");
@@ -905,7 +990,7 @@ function initApp() {
       }
       if (request === state.request) renderResults();
     }
-    await Promise.allSettled([weatherTask(), habitatTask()]);
+    await Promise.allSettled([weatherTask(), habitatTask(), refreshSightings()]);
   }
 
   select.replaceChildren(...MUSHROOMS.map((item) => { const option = node("option", item.name); option.value = item.id; return option; }));
@@ -995,6 +1080,6 @@ function initApp() {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, habitatInfoUrl, normalizeHabitat, habitatTreeCategories, habitatSoilTypes, compareHabitat, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, estimateConfidence, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription };
+  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, habitatInfoUrl, normalizeHabitat, habitatTreeCategories, habitatSoilTypes, compareHabitat, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, estimateConfidence, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription, cleanScientificName, sightingsUrl, normalizeSightings, sightingsViewUrl };
 }
 if (typeof document !== "undefined") initApp();
