@@ -35,19 +35,6 @@ const SERVICES = Object.freeze({
 });
 const finite = (value) => typeof value === "number" && Number.isFinite(value);
 const sum = (values) => values.reduce((total, value) => total + value, 0);
-// Ejecuta `worker` sobre `items` con como mucho `limit` en vuelo a la vez; el mapa de calor lo
-// usa para no lanzar decenas de peticiones simultáneas a las APIs públicas.
-async function runWithConcurrency(items, limit, worker) {
-  let index = 0;
-  async function next() {
-    while (index < items.length) {
-      const current = index++;
-      await worker(items[current], current);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next));
-}
-
 function previousDates(now = new Date(), count = HUMIDITY_CONFIG.historyDays) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit"
@@ -408,25 +395,6 @@ function compareHabitat(species, soil, elevationM, vegetation = null) {
   };
 }
 
-// Rejilla gorda (pocos puntos) para una vista aproximada, recortada al encuadre de Cataluña;
-// no sustituye la consulta puntual, que sigue siendo la fuente de verdad de la estimación.
-function heatmapGridPoints(swLat, swLng, neLat, neLng, catalanBounds, cols = 6, rows = 5) {
-  const points = [];
-  const latStep = (neLat - swLat) / (rows + 1);
-  const lngStep = (neLng - swLng) / (cols + 1);
-  if (latStep <= 0 || lngStep <= 0) return points;
-  for (let row = 1; row <= rows; row += 1) {
-    for (let col = 1; col <= cols; col += 1) {
-      const lat = swLat + latStep * row;
-      const lng = swLng + lngStep * col;
-      if (lat >= catalanBounds[0][0] && lat <= catalanBounds[1][0] && lng >= catalanBounds[0][1] && lng <= catalanBounds[1][1]) {
-        points.push({ lat, lng });
-      }
-    }
-  }
-  return points;
-}
-
 async function fetchJson(url, signal, responseType = "json") {
   const controller = new AbortController();
   const cancel = () => controller.abort();
@@ -638,7 +606,6 @@ const TRANSLATIONS = Object.freeze({
   "No se ha podido conectar con el servicio. Comprueba la conexión y vuelve a intentarlo.": "No s'ha pogut connectar amb el servei. Comprova la connexió i torna-ho a provar.", "El servicio devolvió datos ilegibles. Vuelve a intentarlo.": "El servei ha retornat dades il·legibles. Torna-ho a provar.",
   "Bosque de coníferas/pinos": "Bosc de coníferes/pins", "Bosque de frondosas": "Bosc de frondoses", "Bosque mixto de coníferas y frondosas": "Bosc mixt de coníferes i frondoses", "Terreno agrícola, urbano o prado": "Terreny agrícola, urbà o prat", "Cubierta sin clasificar": "Coberta sense classificar", "Clasificación orientativa:": "Classificació orientativa:", "Mixto (ácido/calcáreo)": "Mixt (àcid/calcari)", "Consultar cartografía original": "Consulta la cartografia original",
   "Acercar": "Apropa", "Alejar": "Allunya", "Capas del mapa": "Capes del mapa", "colaboradores": "col·laboradors",
-  "Calcular mapa de calor (vista actual, experimental)": "Calcula el mapa de calor (vista actual, experimental)", "Ocultar mapa de calor": "Amaga el mapa de calor", "Encuadre fuera de Cataluña: no hay puntos que calcular.": "Enquadrament fora de Catalunya: no hi ha punts a calcular.", "Calculando mapa de calor aproximado: ": "Calculant el mapa de calor aproximat: ", " puntos…": " punts…", "Mapa de calor aproximado: ": "Mapa de calor aproximat: ", " puntos para ": " punts per a ", ". Rejilla gorda, no sustituye a \"Consultar punto\".": ". Reixa grossa, no substitueix \"Consulta el punt\".", "Cambiaste de especie: pulsa \"Calcular mapa de calor\" de nuevo para esta seta.": "Has canviat de bolet: prem \"Calcula el mapa de calor\" de nou per a aquest bolet.", "Rejilla aproximada de pocos puntos por vista, calculada con las mismas fuentes que la consulta puntual. No sustituye a \"Consultar punto\"; es orientativa y experimental.": "Reixa aproximada de pocs punts per vista, calculada amb les mateixes fonts que la consulta puntual. No substitueix \"Consulta el punt\"; és orientativa i experimental.", " (aproximado)": " (aproximat)"
 });
 const translationPattern = new RegExp(Object.keys(TRANSLATIONS).sort((a, b) => b.length - a.length).map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g");
 function translateText(text, language) {
@@ -1146,70 +1113,6 @@ function initApp() {
   $("reset-map").disabled = false;
   $("reset-map").addEventListener("click", center);
 
-  // Mapa de calor experimental: rejilla gorda sobre la vista actual, con las mismas fuentes
-  // que "Consultar punto" pero sin guardar nada en `state` (no es una consulta puntual).
-  const heatmapLayer = L.layerGroup().addTo(map);
-  let heatmapController = null;
-  async function evaluateHeatmapPoint(lat, lng, item, signal) {
-    const dates = previousDates();
-    const key = `${lat.toFixed(4)},${lng.toFixed(4)}:${dates.at(-1)}`;
-    const cached = cache.get(key);
-    const weather = cached && Date.now() - cached.at < SERVICES.cacheMs
-      ? cached.data : normalizeWeather(await fetchJson(weatherUrl(lat, lng), signal), dates);
-    cache.set(key, { at: Date.now(), data: weather });
-    const habitat = normalizeHabitat(await fetchJson(habitatInfoUrl(lat, lng), signal));
-    const climate = analyzeHumidity(item, weather.days);
-    const compared = compareHabitat(item, habitat, weather.elevationM, habitat);
-    return applyVegetationPenalty(climate, compared).level;
-  }
-  async function runHeatmap() {
-    heatmapController?.abort();
-    const controller = new AbortController();
-    heatmapController = controller;
-    heatmapLayer.clearLayers();
-    const view = map.getBounds();
-    const points = heatmapGridPoints(
-      Math.max(view.getSouth(), bounds[0][0]), Math.max(view.getWest(), bounds[0][1]),
-      Math.min(view.getNorth(), bounds[1][0]), Math.min(view.getEast(), bounds[1][1]),
-      bounds
-    );
-    if (!points.length) { setText($("heatmap-status"), "Encuadre fuera de Cataluña: no hay puntos que calcular."); return; }
-    const item = species();
-    let done = 0;
-    setText($("heatmap-status"), `Calculando mapa de calor aproximado: 0 de ${points.length} puntos…`);
-    $("heatmap-hide-btn").disabled = false;
-    await runWithConcurrency(points, 4, async (point) => {
-      try {
-        const level = await evaluateHeatmapPoint(point.lat, point.lng, item, controller.signal);
-        if (controller.signal.aborted) return;
-        L.circleMarker([point.lat, point.lng], { radius: 9, weight: 1, color: colors[level], fillColor: colors[level], fillOpacity: 0.55 })
-          .bindTooltip(node("span", `${item.name}: ${names[level]} (aproximado)`))
-          .addTo(heatmapLayer);
-      } catch { /* Un punto fallido no detiene el resto de la rejilla. */ }
-      done += 1;
-      if (!controller.signal.aborted) setText($("heatmap-status"), `Calculando mapa de calor aproximado: ${done} de ${points.length} puntos…`);
-    });
-    if (!controller.signal.aborted) {
-      setText($("heatmap-status"), `Mapa de calor aproximado: ${points.length} puntos para ${item.name}. Rejilla gorda, no sustituye a "Consultar punto".`);
-    }
-  }
-  $("heatmap-btn").disabled = false;
-  $("heatmap-btn").addEventListener("click", runHeatmap);
-  $("heatmap-hide-btn").addEventListener("click", () => {
-    heatmapController?.abort();
-    heatmapLayer.clearLayers();
-    setText($("heatmap-status"), "");
-    $("heatmap-hide-btn").disabled = true;
-  });
-  // Cambiar de especie invalida la rejilla mostrada (reflejaría la especie anterior); se oculta
-  // en vez de recalcular sola, para no disparar peticiones sin que el usuario lo pida.
-  select.addEventListener("change", () => {
-    heatmapController?.abort();
-    heatmapLayer.clearLayers();
-    if (!$("heatmap-hide-btn").disabled) setText($("heatmap-status"), "Cambiaste de especie: pulsa \"Calcular mapa de calor\" de nuevo para esta seta.");
-    $("heatmap-hide-btn").disabled = true;
-  });
-
   restoreSharedPoint();
   localizeTree();
   updateMapLabels();
@@ -1217,6 +1120,6 @@ function initApp() {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, habitatInfoUrl, normalizeHabitat, habitatTreeCategories, habitatSoilTypes, compareHabitat, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, estimateConfidence, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription, cleanScientificName, sightingsUrl, normalizeSightings, sightingsViewUrl, heatmapGridPoints };
+  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, habitatInfoUrl, normalizeHabitat, habitatTreeCategories, habitatSoilTypes, compareHabitat, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, estimateConfidence, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription, cleanScientificName, sightingsUrl, normalizeSightings, sightingsViewUrl };
 }
 if (typeof document !== "undefined") initApp();

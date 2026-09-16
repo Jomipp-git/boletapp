@@ -630,25 +630,6 @@ test('enlace a GBIF usa el nombre científico limpio, sin coordenadas personales
   assert.equal(url.searchParams.get('q'), 'Morchella');
 });
 
-const { heatmapGridPoints } = require('../app.js');
-const CATALAN_BOUNDS = [[40.5, 0.15], [42.9, 3.35]];
-test('rejilla del mapa de calor: densidad esperada, orden estable y recorte a Cataluña', () => {
-  const points = heatmapGridPoints(41.0, 1.0, 42.0, 2.0, CATALAN_BOUNDS, 4, 3);
-  assert.equal(points.length, 12);
-  for (const point of points) {
-    assert.ok(point.lat > 41.0 && point.lat < 42.0, `lat fuera de rango: ${point.lat}`);
-    assert.ok(point.lng > 1.0 && point.lng < 2.0, `lng fuera de rango: ${point.lng}`);
-  }
-  // Vista que se sale del encuadre de Cataluña: los puntos fuera del bbox se descartan.
-  const clipped = heatmapGridPoints(39.5, -1.0, 41.0, 1.0, CATALAN_BOUNDS, 4, 3);
-  assert.ok(clipped.every((p) => p.lat >= CATALAN_BOUNDS[0][0] && p.lng >= CATALAN_BOUNDS[0][1]));
-  assert.ok(clipped.length < 12);
-  // Vista totalmente fuera de Cataluña: rejilla vacía, no puntos inventados.
-  assert.deepEqual(heatmapGridPoints(0, 0, 1, 1, CATALAN_BOUNDS, 4, 3), []);
-  // Vista degenerada (norte/este no mayor que sur/oeste): no lanza, devuelve vacío.
-  assert.deepEqual(heatmapGridPoints(42, 2, 41, 1, CATALAN_BOUNDS, 4, 3), []);
-});
-
 const { geocodingUrl, firstPlace } = require('../app.js');
 test('búsqueda geográfica limita a Cataluña y codifica texto sin alterar parámetros', () => {
   const url = new URL(geocodingUrl(' Vielha & Viladrau '));

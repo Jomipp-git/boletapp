@@ -40,8 +40,6 @@ Las altitudes de `mushrooms.js` se recalibraron con percentiles p5–p95 de obse
 
 Avistamientos históricos vienen de la API pública de GBIF (`api.gbif.org/v1/occurrence/search`, sin clave), filtrados por `scientificName` (limpio de anotaciones como "(grupo)"/"spp.") y `geoDistance` en un radio de 15 km sobre el punto. Depende de la especie elegida, no solo del punto: se refresca también al cambiar de seta, con su propio `AbortController` independiente de `weatherTask`/`habitatTask`. Es contexto informativo aparte; nunca cambia el nivel de la estimación final.
 
-El mapa de calor es experimental y explícitamente descartable: rejilla gorda (6×5 como mucho) sobre la vista actual del mapa, recortada al encuadre de Cataluña, calculada con las mismas fuentes que "Consultar punto" pero sin tocar `state` ni el marcador principal. Solo se calcula bajo petición explícita (botón), nunca al mover o hacer zoom en el mapa, para no disparar peticiones sin que el usuario lo pida; como mucho 4 puntos en vuelo a la vez (`runWithConcurrency`). Cambiar de especie oculta la rejilla en vez de recalcularla sola, porque reflejaría la especie anterior.
-
 ## Validación y contribuciones
 
 Prueba límites de umbral, ventanas, cancelaciones, cambios rápidos de punto, fallos de red y móvil a 320 px. No hay cobertura mínima. Commits imperativos; propuestas con propósito, comprobaciones y capturas cuando cambie la interfaz.
