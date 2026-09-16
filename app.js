@@ -11,7 +11,10 @@ const HUMIDITY_CONFIG = Object.freeze({
   dryDaysToCancel: 4,
   floodWeekMm: 60,
   maintenanceRainMm: 1.5,
-  maxDaysWithoutMaintenanceRain: 3
+  maxDaysWithoutMaintenanceRain: 3,
+  // Viento fuerte seca la superficie del suelo y dificulta la fructificación incluso con
+  // humedad favorable; umbral sin verificar (~fuerza 5 Beaufort), no una cita bibliográfica.
+  maxWindKmh: 30
 });
 const SERVICES = Object.freeze({
   // Uso gratuito no comercial. Para monetizar: endpoint/proxy autorizado, nunca claves aquí.
@@ -32,6 +35,18 @@ const SERVICES = Object.freeze({
 });
 const finite = (value) => typeof value === "number" && Number.isFinite(value);
 const sum = (values) => values.reduce((total, value) => total + value, 0);
+// Ejecuta `worker` sobre `items` con como mucho `limit` en vuelo a la vez; el mapa de calor lo
+// usa para no lanzar decenas de peticiones simultáneas a las APIs públicas.
+async function runWithConcurrency(items, limit, worker) {
+  let index = 0;
+  async function next() {
+    while (index < items.length) {
+      const current = index++;
+      await worker(items[current], current);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next));
+}
 
 function previousDates(now = new Date(), count = HUMIDITY_CONFIG.historyDays) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -47,8 +62,8 @@ function weatherUrl(lat, lng) {
   url.search = new URLSearchParams({
     latitude: lat, longitude: lng, timezone: "Europe/Madrid",
     past_days: HUMIDITY_CONFIG.historyDays, forecast_days: 0,
-    daily: "rain_sum,showers_sum,temperature_2m_max,temperature_2m_mean",
-    hourly: "relative_humidity_2m", precipitation_unit: "mm"
+    daily: "rain_sum,showers_sum,temperature_2m_max,temperature_2m_mean,wind_speed_10m_max",
+    hourly: "relative_humidity_2m", precipitation_unit: "mm", wind_speed_unit: "kmh"
   });
   return url.toString();
 }
@@ -63,6 +78,11 @@ function normalizeWeather(payload, expectedDates) {
       payload.daily_units?.temperature_2m_max !== "°C" || payload.daily_units?.temperature_2m_mean !== "°C") {
     throw new Error("La respuesta meteorológica tiene un formato o unidades no válidos.");
   }
+  // El viento es un refinamiento, no un requisito: si falta o trae unidades inesperadas, se
+  // trata como ausente día a día en vez de invalidar los 28 días de lluvia y temperatura,
+  // que sí son obligatorios.
+  const windAvailable = payload.daily_units?.wind_speed_10m_max === "km/h" &&
+    Array.isArray(daily.wind_speed_10m_max) && daily.wind_speed_10m_max.length === daily.time.length;
   const humidity = new Map();
   if (payload.hourly_units?.relative_humidity_2m === "%" &&
       Array.isArray(payload.hourly?.time) && Array.isArray(payload.hourly?.relative_humidity_2m) &&
@@ -86,10 +106,12 @@ function normalizeWeather(payload, expectedDates) {
     const lastSunday = day.getUTCDay() === 0 && day.getUTCDate() + 7 > new Date(Date.UTC(day.getUTCFullYear(), month, 0)).getUTCDate();
     const hours = lastSunday && month === 3 ? 23 : lastSunday && month === 10 ? 25 : 24;
     const completeHumidity = readings.length === hours && readings.every((value) => finite(value) && value >= 0 && value <= 100);
+    const wind = windAvailable ? daily.wind_speed_10m_max[index] : null;
     return {
       date, rainMm: daily.rain_sum[index] + daily.showers_sum[index],
       maxC: daily.temperature_2m_max[index], meanC: daily.temperature_2m_mean[index],
-      humidityPct: completeHumidity ? sum(readings) / readings.length : null
+      humidityPct: completeHumidity ? sum(readings) / readings.length : null,
+      windMaxKmh: finite(wind) && wind >= 0 ? wind : null
     };
   });
   return { days, elevationM: finite(payload.elevation) ? payload.elevation : null };
@@ -151,9 +173,15 @@ function analyzeHumidity(species, days, config = HUMIDITY_CONFIG, now = new Date
     if (age > species.emergenceDays.max) {
       return result("low", [`Ventana terminada: han pasado ${age} días desde el shock.`], extra);
     }
+    // Un día ventoso no cuenta como favorable aunque haya llovido fino o la humedad sea alta:
+    // el viento seca la superficie antes de que el hongo pueda aprovechar esa humedad.
+    const isWindy = (day) => finite(day.windMaxKmh) && day.windMaxKmh >= config.maxWindKmh;
     const supportedDays = incubation.filter((day) =>
-      (day.rainMm >= config.fineRainMinMm && day.rainMm <= config.fineRainMaxMm) ||
-      (finite(day.humidityPct) && day.humidityPct >= config.humidMeanPct)).length;
+      !isWindy(day) && (
+        (day.rainMm >= config.fineRainMinMm && day.rainMm <= config.fineRainMaxMm) ||
+        (finite(day.humidityPct) && day.humidityPct >= config.humidMeanPct)
+      )).length;
+    const windyDays = incubation.filter(isWindy).length;
     const humidityRatio = incubation.length ? supportedDays / incubation.length : 0;
     const missingHumidity = incubation.some((day) => !finite(day.humidityPct));
     const favorable = humidityRatio >= config.sustainedHumidityRatio && !missingHumidity;
@@ -163,8 +191,9 @@ function analyzeHumidity(species, days, config = HUMIDITY_CONFIG, now = new Date
       `Humedad favorable en ${supportedDays} de ${incubation.length} días de incubación.`,
       ...(missingHumidity ? ["Humedad horaria incompleta: estimación base limitada a Media."] : []),
       ...(soilDryPenalty ? [`Suelo seco: más de ${config.maxDaysWithoutMaintenanceRain} días completos sin al menos ${config.maintenanceRainMm} mm/día durante la incubación; penalización de un nivel.`] : []),
+      ...(windyDays > 0 ? [`Viento fuerte (≥${config.maxWindKmh} km/h) en ${windyDays} de ${incubation.length} días de incubación: no cuentan como favorables aunque hubiera humedad.`] : []),
       ...(!finite(temperature.minC) && !finite(temperature.maxC) ? ["Criterio térmico cualitativo: no se aplica un umbral numérico no especificado."] : [])
-    ], { ...extra, humidityRatio, soilDryPenalty });
+    ], { ...extra, humidityRatio, soilDryPenalty, windyDays });
   });
   // Sin lluvias suficientes tampoco se inventa una fecha; aplicar los mismos filtros.
   if (!evaluated.length) evaluated.push(result("low", [`No se detecta un shock superior a ${species.shockMm} mm en 48–72 h.`]));
@@ -369,6 +398,25 @@ function compareHabitat(species, soil, elevationM, vegetation = null) {
   };
 }
 
+// Rejilla gorda (pocos puntos) para una vista aproximada, recortada al encuadre de Cataluña;
+// no sustituye la consulta puntual, que sigue siendo la fuente de verdad de la estimación.
+function heatmapGridPoints(swLat, swLng, neLat, neLng, catalanBounds, cols = 6, rows = 5) {
+  const points = [];
+  const latStep = (neLat - swLat) / (rows + 1);
+  const lngStep = (neLng - swLng) / (cols + 1);
+  if (latStep <= 0 || lngStep <= 0) return points;
+  for (let row = 1; row <= rows; row += 1) {
+    for (let col = 1; col <= cols; col += 1) {
+      const lat = swLat + latStep * row;
+      const lng = swLng + lngStep * col;
+      if (lat >= catalanBounds[0][0] && lat <= catalanBounds[1][0] && lng >= catalanBounds[0][1] && lng <= catalanBounds[1][1]) {
+        points.push({ lat, lng });
+      }
+    }
+  }
+  return points;
+}
+
 async function fetchJson(url, signal, responseType = "json") {
   const controller = new AbortController();
   const cancel = () => controller.abort();
@@ -411,8 +459,11 @@ function calendarDays(species, days, analysis, config = HUMIDITY_CONFIG) {
       stopped ||= hotDryDays >= config.dryDaysToCancel || flood;
       const humid = (day.rainMm >= config.fineRainMinMm && day.rainMm <= config.fineRainMaxMm) ||
         (finite(day.humidityPct) && day.humidityPct >= config.humidMeanPct);
+      const windy = finite(day.windMaxKmh) && day.windMaxKmh >= config.maxWindKmh;
       if (day.maxC >= config.dryHotMaxC || dry) {
         status = "penalized"; label = dry ? "Seco" : "Calor";
+      } else if (windy) {
+        status = "penalized"; label = "Viento";
       } else if (age >= species.emergenceDays.min && humid && !soilPenalty && !stopped) {
         // "Favorable" en vez de "Óptimo": es una señal diaria, no el nivel agregado que
         // muestra la estimación final (Baja/Media/Alta), que exige un 60 % de días así.
@@ -536,9 +587,9 @@ const TRANSLATIONS = Object.freeze({
   "Ventana óptima de humedad": "Finestra òptima d'humitat", "Terreno": "Terreny", "Baja": "Baixa", "Media": "Mitjana", "Alta": "Alta", "Sin evaluar": "Sense avaluar", "Hábitat pendiente": "Hàbitat pendent", "Hábitat Óptimo": "Hàbitat Òptim", "Hábitat Incompatible": "Hàbitat Incompatible",
   "Compartir por WhatsApp": "Comparteix per WhatsApp", "Estimación final:": "Estimació final:", "estimación final": "estimació final", "Consulta un punto para analizar las condiciones recientes.": "Consulta un punt per analitzar les condicions recents.",
   "Historial de condiciones diarias (Últimos 28 días)": "Historial de condicions diàries (Últims 28 dies)", "Consulta un punto para ver los últimos 28 días completos, desde ayer hacia atrás.": "Consulta un punt per veure els últims 28 dies complets, des d'ahir cap enrere.",
-  "Calor / Seco:": "Calor / Sec:", "Seco": "Sec", "Normal (Gris):": "Normal (Gris):",
+  "Calor / Seco / Viento:": "Calor / Sec / Vent:", "Seco": "Sec", "Viento": "Vent", "Normal (Gris):": "Normal (Gris):",
   "Día en el que la lluvia acumulada alcanza el shock que, según el modelo, puede despertar al hongo debajo de la tierra.": "Dia en què la pluja acumulada assoleix el xoc que, segons el model, pot despertar el fong sota terra.",
-  "Alerta. El bosque registró calor (máxima ≥25 °C) o más de 3 días sin al menos 1,5 mm diarios de lluvia, lo que puede retrasar o cancelar la brotada.": "Alerta. El bosc va registrar calor (màxima ≥25 °C) o més de 3 dies sense almenys 1,5 mm diaris de pluja, fet que pot retardar o cancel·lar la brotada.",
+  "Alerta. El bosque registró calor (máxima ≥25 °C), más de 3 días sin al menos 1,5 mm diarios de lluvia, o viento fuerte (≥30 km/h), lo que puede retrasar o cancelar la brotada.": "Alerta. El bosc va registrar calor (màxima ≥25 °C), més de 3 dies sense almenys 1,5 mm diaris de pluja, o vent fort (≥30 km/h), fet que pot retardar o cancel·lar la brotada.",
   "¡Día de gloria! Ese día está dentro de la ventana favorable tras la lluvia y presenta condiciones de humedad adecuadas según el modelo. Es una señal diaria, no el nivel agregado de la estimación final.": "Dia de glòria! Aquell dia és dins la finestra favorable després de la pluja i presenta condicions d'humitat adequades segons el model. És un senyal diari, no el nivell agregat de l'estimació final.",
   "El bosque está en calma: ese día no tiene una señal destacada en el episodio analizado y el hongo puede seguir esperando condiciones favorables.": "El bosc està en calma: aquell dia no té cap senyal destacat en l'episodi analitzat i el fong pot continuar esperant condicions favorables.",
   "El suelo y los árboles del punto todavía no están verificados.": "El sòl i els arbres del punt encara no estan verificats.",
@@ -563,13 +614,14 @@ const TRANSLATIONS = Object.freeze({
   "Avistamientos históricos (GBIF)": "Observacions històriques (GBIF)", "Elige un punto para consultar avistamientos.": "Tria un punt per consultar observacions.", "Consultando avistamientos de GBIF…": "Consultant observacions de GBIF…", "Avistamientos de ": "Observacions de ", " en GBIF (radio ": " a GBIF (radi ", " km): ": " km): ", "Más reciente: ": "Més recent: ", "Ver registros en GBIF": "Veure registres a GBIF", "Son registros históricos de otros años, no confirman que haya setas ahora mismo ni en este punto exacto. No sustituyen al clima ni al hábitat en la estimación final.": "Són registres històrics d'altres anys, no confirmen que hi hagi bolets ara mateix ni en aquest punt exacte. No substitueixen el clima ni l'hàbitat en l'estimació final.", "Fuente: GBIF.org": "Font: GBIF.org", "No se pudieron consultar los avistamientos de GBIF. Vuelve a intentarlo.": "No s'han pogut consultar les observacions de GBIF. Torna-ho a provar.",
   "El clima y el hábitat se muestran por separado. La estimación final y el color del mapa bajan a Baja si el suelo o los árboles son incompatibles. La clasificación es orientativa y no confirma presencia de setas.": "El clima i l'hàbitat es mostren per separat. L'estimació final i el color del mapa baixen a Baixa si el sòl o els arbres són incompatibles. La classificació és orientativa i no confirma la presència de bolets.",
   " — restricción biológica por hábitat incompatible": " — restricció biològica per hàbitat incompatible", "Punto ": "Punt ", " · Evaluación hasta ": " · Avaluació fins a ", "Lluvia de los últimos 14 días": "Pluja dels últims 14 dies", "Sin shock": "Sense xoc", "Fin del episodio de lluvia inicial": "Final de l'episodi de pluja inicial", "Lluvia:": "Pluja:", "Temperatura media:": "Temperatura mitjana:", "Máxima:": "Màxima:", " · 14/14 días completos. Histórico analizado: 28 días.": " · 14/14 dies complets. Historial analitzat: 28 dies.", "Estimación orientativa, sin garantía de fructificación.": "Estimació orientativa, sense garantia de fructificació.",
-  "Se necesitan 28 días consecutivos completos de lluvia y temperatura.": "Calen 28 dies consecutius complets de pluja i temperatura.", "Episodio cancelado: cuatro días consecutivos sin lluvia y con máximas ≥25 °C.": "Episodi cancel·lat: quatre dies consecutius sense pluja i amb màximes ≥25 °C.", "Episodio detenido: más de 60 mm en siete días de incubación (regla de exceso de agua).": "Episodi aturat: més de 60 mm en set dies d'incubació (regla d'excés d'aigua).", "En incubación: día ": "En incubació: dia ", "; la ventana empieza en el día ": "; la finestra comença el dia ", "Ventana terminada: han pasado ": "Finestra acabada: han passat ", " días desde el shock.": " dies des del xoc.", "Dentro de ventana: día ": "Dins de la finestra: dia ", "Humedad favorable en ": "Humitat favorable en ", " días de incubación.": " dies d'incubació.", "Humedad horaria incompleta: estimación base limitada a Media.": "Humitat horària incompleta: estimació base limitada a Mitjana.", "Suelo seco: más de ": "Sòl sec: més de ", " días completos sin al menos ": " dies complets sense almenys ", " mm/día durante la incubación; penalización de un nivel.": " mm/dia durant la incubació; penalització d'un nivell.", "Criterio térmico cualitativo: no se aplica un umbral numérico no especificado.": "Criteri tèrmic qualitatiu: no s'aplica un llindar numèric no especificat.", "No se detecta un shock superior a ": "No es detecta cap xoc superior a ", "Fuera de temporada: mes actual ": "Fora de temporada: mes actual ", "; meses óptimos: ": "; mesos òptims: ", "Temperatura fuera de rango: media de tres días ": "Temperatura fora de rang: mitjana de tres dies ", ". Requiere ": ". Requereix ", "Restricción biológica: el suelo o la vegetación no son compatibles con esta seta.": "Restricció biològica: el sòl o la vegetació no són compatibles amb aquest bolet.",
+  "Se necesitan 28 días consecutivos completos de lluvia y temperatura.": "Calen 28 dies consecutius complets de pluja i temperatura.", "Episodio cancelado: cuatro días consecutivos sin lluvia y con máximas ≥25 °C.": "Episodi cancel·lat: quatre dies consecutius sense pluja i amb màximes ≥25 °C.", "Episodio detenido: más de 60 mm en siete días de incubación (regla de exceso de agua).": "Episodi aturat: més de 60 mm en set dies d'incubació (regla d'excés d'aigua).", "En incubación: día ": "En incubació: dia ", "; la ventana empieza en el día ": "; la finestra comença el dia ", "Ventana terminada: han pasado ": "Finestra acabada: han passat ", " días desde el shock.": " dies des del xoc.", "Dentro de ventana: día ": "Dins de la finestra: dia ", "Humedad favorable en ": "Humitat favorable en ", " días de incubación.": " dies d'incubació.", "Humedad horaria incompleta: estimación base limitada a Media.": "Humitat horària incompleta: estimació base limitada a Mitjana.", "Suelo seco: más de ": "Sòl sec: més de ", " días completos sin al menos ": " dies complets sense almenys ", " mm/día durante la incubación; penalización de un nivel.": " mm/dia durant la incubació; penalització d'un nivell.", "Criterio térmico cualitativo: no se aplica un umbral numérico no especificado.": "Criteri tèrmic qualitatiu: no s'aplica un llindar numèric no especificat.", "Viento fuerte (≥": "Vent fort (≥", " km/h) en ": " km/h) en ", " de ": " de ", " días de incubación: no cuentan como favorables aunque hubiera humedad.": " dies d'incubació: no compten com a favorables encara que hi hagués humitat.", " Viento máximo: ": " Vent màxim: ", " km/h.": " km/h.", "No se detecta un shock superior a ": "No es detecta cap xoc superior a ", "Fuera de temporada: mes actual ": "Fora de temporada: mes actual ", "; meses óptimos: ": "; mesos òptims: ", "Temperatura fuera de rango: media de tres días ": "Temperatura fora de rang: mitjana de tres dies ", ". Requiere ": ". Requereix ", "Restricción biológica: el suelo o la vegetación no son compatibles con esta seta.": "Restricció biològica: el sòl o la vegetació no són compatibles amb aquest bolet.",
   "Escribe un lugar para buscar.": "Escriu un lloc per cercar.", "Buscando lugar…": "Cercant el lloc…", "Espera un segundo antes de volver a buscar.": "Espera un segon abans de tornar a cercar.", "No se ha encontrado ese lugar en Cataluña. Prueba otro nombre.": "No s'ha trobat aquest lloc a Catalunya. Prova un altre nom.", "No se pudo buscar:": "No s'ha pogut cercar:", "Se ha solicitado abrir WhatsApp con el mensaje preparado. Elige a quién enviarlo.": "S'ha sol·licitat obrir WhatsApp amb el missatge preparat. Tria a qui enviar-lo.", "Selecciona un punto dentro del encuadre de Cataluña.": "Selecciona un punt dins l'enquadrament de Catalunya.", "Consultando 28 días de lluvia, temperatura y humedad…": "Consultant 28 dies de pluja, temperatura i humitat…", "No se puede evaluar el punto:": "No es pot avaluar el punt:", ". Pulsa Consultar punto para reintentar.": ". Prem Consulta el punt per tornar-ho a provar.", "La cartografia d'hàbitats no está disponible o no permite esta consulta desde el navegador. El cruce de suelo y árboles queda pendiente.": "La cartografia d'hàbitats no està disponible o no permet aquesta consulta des del navegador. L'encreuament de sòl i arbres queda pendent.",
   "No se ha podido cargar Leaflet. Puedes consultar las coordenadas y las fichas sin mapa.": "No s'ha pogut carregar Leaflet. Pots consultar les coordenades i les fitxes sense mapa.", "Usar mi ubicación GPS": "Fes servir la meva ubicació GPS", "El GPS requiere HTTPS (o localhost) y un navegador con geolocalización.": "El GPS requereix HTTPS (o localhost) i un navegador amb geolocalització.", "Buscando tu ubicación. Permite el acceso al GPS en el navegador.": "Cercant la teva ubicació. Permet l'accés al GPS al navegador.", " (precisión aproximada: ": " (precisió aproximada: ", "Tu posición GPS": "La teva posició GPS", "Ubicación GPS encontrada": "Ubicació GPS trobada", "Permiso de ubicación denegado. Puedes buscar un lugar o introducir coordenadas.": "Permís d'ubicació denegat. Pots cercar un lloc o introduir coordenades.", "No se pudo obtener tu ubicación. Comprueba el GPS y vuelve a intentarlo.": "No s'ha pogut obtenir la teva ubicació. Comprova el GPS i torna-ho a provar.", "No se han cargado algunas partes del mapa. Puedes usar las coordenadas.": "No s'han carregat algunes parts del mapa. Pots fer servir les coordenades.", "No se ha podido cargar la capa de hábitats.": "No s'ha pogut carregar la capa d'hàbitats.", "Cartografia dels hàbitats: acerca el mapa para ver las unidades.": "Cartografia dels hàbitats: apropa el mapa per veure les unitats.", "Hàbitats de Catalunya": "Hàbitats de Catalunya",
   "La respuesta meteorológica tiene un formato o unidades no válidos.": "La resposta meteorològica té un format o unitats no vàlids.", "Histórico incompleto (": "Historial incomplet (", "). No se calcula una estimación con huecos.": "). No es calcula cap estimació amb buits.", "Límite de consultas alcanzado. Inténtalo más tarde.": "Límit de consultes assolit. Torna-ho a provar més tard.", "El servicio responde HTTP ": "El servei respon HTTP ", "El servicio ha tardado demasiado. Vuelve a consultar el punto.": "El servei ha trigat massa. Torna a consultar el punt.", "Respuesta de búsqueda no reconocida.": "Resposta de cerca no reconeguda.", "El lugar está fuera del área de consulta de Cataluña.": "El lloc és fora de l'àrea de consulta de Catalunya.", "Lugar encontrado": "Lloc trobat", "El enlace contiene coordenadas o una especie no válidas.": "L'enllaç conté coordenades o una espècie no vàlides.", "Para compartir, abre la web publicada o configura su URL pública en public-site-url de index.html.": "Per compartir, obre el web publicat o configura'n l'URL públic a public-site-url d'index.html.",
   "No se ha podido conectar con el servicio. Comprueba la conexión y vuelve a intentarlo.": "No s'ha pogut connectar amb el servei. Comprova la connexió i torna-ho a provar.", "El servicio devolvió datos ilegibles. Vuelve a intentarlo.": "El servei ha retornat dades il·legibles. Torna-ho a provar.",
   "Bosque de coníferas/pinos": "Bosc de coníferes/pins", "Bosque de frondosas": "Bosc de frondoses", "Bosque mixto de coníferas y frondosas": "Bosc mixt de coníferes i frondoses", "Terreno agrícola, urbano o prado": "Terreny agrícola, urbà o prat", "Cubierta sin clasificar": "Coberta sense classificar", "Clasificación orientativa:": "Classificació orientativa:", "Mixto (ácido/calcáreo)": "Mixt (àcid/calcari)", "Consultar cartografía original": "Consulta la cartografia original",
-  "Acercar": "Apropa", "Alejar": "Allunya", "Capas del mapa": "Capes del mapa", "colaboradores": "col·laboradors"
+  "Acercar": "Apropa", "Alejar": "Allunya", "Capas del mapa": "Capes del mapa", "colaboradores": "col·laboradors",
+  "Calcular mapa de calor (vista actual, experimental)": "Calcula el mapa de calor (vista actual, experimental)", "Ocultar mapa de calor": "Amaga el mapa de calor", "Encuadre fuera de Cataluña: no hay puntos que calcular.": "Enquadrament fora de Catalunya: no hi ha punts a calcular.", "Calculando mapa de calor aproximado: ": "Calculant el mapa de calor aproximat: ", " puntos…": " punts…", "Mapa de calor aproximado: ": "Mapa de calor aproximat: ", " puntos para ": " punts per a ", ". Rejilla gorda, no sustituye a \"Consultar punto\".": ". Reixa grossa, no substitueix \"Consulta el punt\".", "Cambiaste de especie: pulsa \"Calcular mapa de calor\" de nuevo para esta seta.": "Has canviat de bolet: prem \"Calcula el mapa de calor\" de nou per a aquest bolet.", "Rejilla aproximada de pocos puntos por vista, calculada con las mismas fuentes que la consulta puntual. No sustituye a \"Consultar punto\"; es orientativa y experimental.": "Reixa aproximada de pocs punts per vista, calculada amb les mateixes fonts que la consulta puntual. No substitueix \"Consulta el punt\"; és orientativa i experimental.", " (aproximado)": " (aproximat)"
 });
 const translationPattern = new RegExp(Object.keys(TRANSLATIONS).sort((a, b) => b.length - a.length).map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g");
 function translateText(text, language) {
@@ -906,7 +958,7 @@ function initApp() {
         node("span", `${number(day.rainMm)} mm`),
         node("span", `${number(day.meanC)} °C`, "calendar-temperature")
       );
-      const description = `${day.date}: ${day.label}. Lluvia: ${number(day.rainMm)} mm. Temperatura media: ${number(day.meanC)} °C. Máxima: ${number(day.maxC)} °C.`;
+      const description = `${day.date}: ${day.label}. Lluvia: ${number(day.rainMm)} mm. Temperatura media: ${number(day.meanC)} °C. Máxima: ${number(day.maxC)} °C.${finite(day.windMaxKmh) ? ` Viento máximo: ${number(day.windMaxKmh)} km/h.` : ""}`;
       block.title = t(description);
       block.setAttribute("aria-label", t(description));
       return block;
@@ -1073,6 +1125,71 @@ function initApp() {
   map.on("click", (event) => consultPoint(event.latlng.lat, event.latlng.lng));
   $("reset-map").disabled = false;
   $("reset-map").addEventListener("click", center);
+
+  // Mapa de calor experimental: rejilla gorda sobre la vista actual, con las mismas fuentes
+  // que "Consultar punto" pero sin guardar nada en `state` (no es una consulta puntual).
+  const heatmapLayer = L.layerGroup().addTo(map);
+  let heatmapController = null;
+  async function evaluateHeatmapPoint(lat, lng, item, signal) {
+    const dates = previousDates();
+    const key = `${lat.toFixed(4)},${lng.toFixed(4)}:${dates.at(-1)}`;
+    const cached = cache.get(key);
+    const weather = cached && Date.now() - cached.at < SERVICES.cacheMs
+      ? cached.data : normalizeWeather(await fetchJson(weatherUrl(lat, lng), signal), dates);
+    cache.set(key, { at: Date.now(), data: weather });
+    const habitat = normalizeHabitat(await fetchJson(habitatInfoUrl(lat, lng), signal));
+    const climate = analyzeHumidity(item, weather.days);
+    const compared = compareHabitat(item, habitat, weather.elevationM, habitat);
+    return applyVegetationPenalty(climate, compared).level;
+  }
+  async function runHeatmap() {
+    heatmapController?.abort();
+    const controller = new AbortController();
+    heatmapController = controller;
+    heatmapLayer.clearLayers();
+    const view = map.getBounds();
+    const points = heatmapGridPoints(
+      Math.max(view.getSouth(), bounds[0][0]), Math.max(view.getWest(), bounds[0][1]),
+      Math.min(view.getNorth(), bounds[1][0]), Math.min(view.getEast(), bounds[1][1]),
+      bounds
+    );
+    if (!points.length) { setText($("heatmap-status"), "Encuadre fuera de Cataluña: no hay puntos que calcular."); return; }
+    const item = species();
+    let done = 0;
+    setText($("heatmap-status"), `Calculando mapa de calor aproximado: 0 de ${points.length} puntos…`);
+    $("heatmap-hide-btn").disabled = false;
+    await runWithConcurrency(points, 4, async (point) => {
+      try {
+        const level = await evaluateHeatmapPoint(point.lat, point.lng, item, controller.signal);
+        if (controller.signal.aborted) return;
+        L.circleMarker([point.lat, point.lng], { radius: 9, weight: 1, color: colors[level], fillColor: colors[level], fillOpacity: 0.55 })
+          .bindTooltip(node("span", `${item.name}: ${names[level]} (aproximado)`))
+          .addTo(heatmapLayer);
+      } catch { /* Un punto fallido no detiene el resto de la rejilla. */ }
+      done += 1;
+      if (!controller.signal.aborted) setText($("heatmap-status"), `Calculando mapa de calor aproximado: ${done} de ${points.length} puntos…`);
+    });
+    if (!controller.signal.aborted) {
+      setText($("heatmap-status"), `Mapa de calor aproximado: ${points.length} puntos para ${item.name}. Rejilla gorda, no sustituye a "Consultar punto".`);
+    }
+  }
+  $("heatmap-btn").disabled = false;
+  $("heatmap-btn").addEventListener("click", runHeatmap);
+  $("heatmap-hide-btn").addEventListener("click", () => {
+    heatmapController?.abort();
+    heatmapLayer.clearLayers();
+    setText($("heatmap-status"), "");
+    $("heatmap-hide-btn").disabled = true;
+  });
+  // Cambiar de especie invalida la rejilla mostrada (reflejaría la especie anterior); se oculta
+  // en vez de recalcular sola, para no disparar peticiones sin que el usuario lo pida.
+  select.addEventListener("change", () => {
+    heatmapController?.abort();
+    heatmapLayer.clearLayers();
+    if (!$("heatmap-hide-btn").disabled) setText($("heatmap-status"), "Cambiaste de especie: pulsa \"Calcular mapa de calor\" de nuevo para esta seta.");
+    $("heatmap-hide-btn").disabled = true;
+  });
+
   restoreSharedPoint();
   localizeTree();
   updateMapLabels();
@@ -1080,6 +1197,6 @@ function initApp() {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, habitatInfoUrl, normalizeHabitat, habitatTreeCategories, habitatSoilTypes, compareHabitat, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, estimateConfidence, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription, cleanScientificName, sightingsUrl, normalizeSightings, sightingsViewUrl };
+  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, habitatInfoUrl, normalizeHabitat, habitatTreeCategories, habitatSoilTypes, compareHabitat, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, estimateConfidence, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription, cleanScientificName, sightingsUrl, normalizeSightings, sightingsViewUrl, heatmapGridPoints };
 }
 if (typeof document !== "undefined") initApp();

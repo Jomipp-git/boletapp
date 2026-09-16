@@ -115,6 +115,7 @@ footer { border-top: 1px solid var(--line); font-size: .875rem; color: var(--mut
 .search-row { display: flex; gap: .5rem; }
 .search-row input { flex: 1; min-width: 0; }
 .search-row button { flex-shrink: 0; }
+.heatmap-controls { display: flex; flex-wrap: wrap; gap: .5rem; padding: .5rem 1rem 0; }
 .gps-control .gps-button { display: block; width: 48px; height: 48px; padding: 0; border-radius: 2px; background: var(--card-bg); color: #123e32; font-size: 1.8rem; line-height: 1; }
 #navigation-status:empty { display: none; }
 @media (max-width: 380px) { .search-row { flex-direction: column; } }

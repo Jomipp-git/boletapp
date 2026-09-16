@@ -150,6 +150,58 @@ test('normalización suma lluvia y chubascos, sin confundir nulo con cero', () =
   data.daily.rain_sum[5] = 1; data.daily_units.rain_sum = 'inch';
   assert.throws(() => normalizeWeather(data, dates), /unidades/);
 });
+test('el viento es un refinamiento, no un requisito: ausente o con unidades erróneas no invalida los 28 días', () => {
+  const data = payload();
+  const dates = data.daily.time;
+  // Sin wind_speed_10m_max en absoluto: no debe lanzar, solo windMaxKmh queda en null.
+  assert.doesNotThrow(() => normalizeWeather(data, dates));
+  assert.equal(normalizeWeather(data, dates).days[0].windMaxKmh, null);
+  // Con el campo pero unidades equivocadas: tampoco invalida el histórico de lluvia/temperatura.
+  data.daily_units.wind_speed_10m_max = 'mph';
+  data.daily.wind_speed_10m_max = data.daily.time.map(() => 10);
+  const wrongUnits = normalizeWeather(data, dates);
+  assert.equal(wrongUnits.days[0].windMaxKmh, null);
+  assert.equal(wrongUnits.days.length, 28);
+  // Con unidades correctas: se extrae el valor real.
+  data.daily_units.wind_speed_10m_max = 'km/h';
+  data.daily.wind_speed_10m_max = data.daily.time.map((_, i) => i === 3 ? 45 : 10);
+  const withWind = normalizeWeather(data, dates);
+  assert.equal(withWind.days[0].windMaxKmh, 10);
+  assert.equal(withWind.days[3].windMaxKmh, 45);
+});
+test('la URL meteorológica pide viento máximo diario en km/h', () => {
+  const url = new URL(weatherUrl(42.1, 1.8));
+  assert.match(url.searchParams.get('daily'), /wind_speed_10m_max/);
+  assert.equal(url.searchParams.get('wind_speed_unit'), 'kmh');
+});
+test('viento fuerte descuenta días favorables y penaliza el nivel, sin bloquear por dato ausente', () => {
+  const days = withShock(14);
+  // Sin viento en absoluto (fixture base sin windMaxKmh): se comporta como antes, sin penalizar.
+  assert.equal(analyzeHumidity(species, days).level, 'high');
+  // Viento fuerte en todos los días de incubación: ya no hay días favorables, aunque llovió fino.
+  const windyDays = withShock(14);
+  windyDays.forEach((day) => { day.windMaxKmh = 45; });
+  const windyResult = analyzeHumidity(species, windyDays);
+  assert.equal(windyResult.level, 'medium');
+  assert.equal(windyResult.windyDays, 14);
+  assert.match(windyResult.reasons.join(' '), /Viento fuerte \(≥30 km\/h\) en 14 de 14/);
+  // Viento moderado (por debajo del umbral) no debe penalizar.
+  const calmDays = withShock(14);
+  calmDays.forEach((day) => { day.windMaxKmh = 15; });
+  assert.equal(analyzeHumidity(species, calmDays).level, 'high');
+});
+test('calendario marca "Viento" en días de viento fuerte, con prioridad menor que Seco/Calor', () => {
+  const days = withShock(14);
+  days[15].windMaxKmh = 45;
+  const analysis = analyzeHumidity(species, days);
+  const entries = calendarDays(species, days, analysis);
+  assert.equal(entries[15].status, 'penalized');
+  assert.equal(entries[15].label, 'Viento');
+  // Calor sigue teniendo prioridad si coinciden ambas condiciones el mismo día.
+  days[16].windMaxKmh = 45; days[16].maxC = 26;
+  const entries2 = calendarDays(species, days, analyzeHumidity(species, days));
+  assert.equal(entries2[16].label, 'Calor');
+});
 test('un día ausente no se rellena', () => {
   const data = payload();
   const expected = [...data.daily.time];
@@ -540,6 +592,25 @@ test('enlace a GBIF usa el nombre científico limpio, sin coordenadas personales
   const url = new URL(sightingsViewUrl('Morchella spp.'));
   assert.equal(url.hostname, 'www.gbif.org');
   assert.equal(url.searchParams.get('q'), 'Morchella');
+});
+
+const { heatmapGridPoints } = require('../app.js');
+const CATALAN_BOUNDS = [[40.5, 0.15], [42.9, 3.35]];
+test('rejilla del mapa de calor: densidad esperada, orden estable y recorte a Cataluña', () => {
+  const points = heatmapGridPoints(41.0, 1.0, 42.0, 2.0, CATALAN_BOUNDS, 4, 3);
+  assert.equal(points.length, 12);
+  for (const point of points) {
+    assert.ok(point.lat > 41.0 && point.lat < 42.0, `lat fuera de rango: ${point.lat}`);
+    assert.ok(point.lng > 1.0 && point.lng < 2.0, `lng fuera de rango: ${point.lng}`);
+  }
+  // Vista que se sale del encuadre de Cataluña: los puntos fuera del bbox se descartan.
+  const clipped = heatmapGridPoints(39.5, -1.0, 41.0, 1.0, CATALAN_BOUNDS, 4, 3);
+  assert.ok(clipped.every((p) => p.lat >= CATALAN_BOUNDS[0][0] && p.lng >= CATALAN_BOUNDS[0][1]));
+  assert.ok(clipped.length < 12);
+  // Vista totalmente fuera de Cataluña: rejilla vacía, no puntos inventados.
+  assert.deepEqual(heatmapGridPoints(0, 0, 1, 1, CATALAN_BOUNDS, 4, 3), []);
+  // Vista degenerada (norte/este no mayor que sur/oeste): no lanza, devuelve vacío.
+  assert.deepEqual(heatmapGridPoints(42, 2, 41, 1, CATALAN_BOUNDS, 4, 3), []);
 });
 
 const { geocodingUrl, firstPlace } = require('../app.js');

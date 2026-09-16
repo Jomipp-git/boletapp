@@ -28,9 +28,13 @@ Open-Meteo consulta 28 días completos hasta ayer en `Europe/Madrid`; muestra ac
 
 Detecta shocks estrictamente superiores al umbral en 48–72 horas, sin reiniciar frentes continuos. Evalúa incubación, sequía, exceso semanal y estacionalidad. Los criterios térmicos y de humedad configurables son supuestos, no citas bibliográficas.
 
+El viento (`wind_speed_10m_max`, km/h) descarta como favorable un día de incubación aunque haya llovido fino o la humedad relativa sea alta, por encima de `maxWindKmh` (30 km/h, sin verificar). Es un refinamiento, no un requisito: si Open-Meteo no lo trae o con unidades inesperadas, se trata como ausente día a día sin invalidar los 28 días de lluvia y temperatura, que sí son obligatorios.
+
 Hábitat y suelo usan un único WFS público de la Generalitat (`sig.gencat.cat/ows/HABITATS/wfs`, capa `HABITATS_TERRESTPOL`, Cartografia dels hàbitats v3): consulta puntual exacta (`INTERSECTS` sobre el punto, no una caja), sin la ambigüedad de mezclar parches vecinos que sí tenía el WMS del ICGC usado hasta la v1.2.0. El árbol dominante se extrae del género/especie en latín entre paréntesis del propio texto (más fiable que el nombre común en catalán, que varía por comarca); el carácter del suelo, de las palabras "calcícola"/"silicícola" que ya trae la descripción del hábitat. Completa la correspondencia únicamente con evidencia; sin esas palabras o sin género reconocido, queda pendiente. El mapa colorea estimaciones meteorológicas puntuales, no áreas confirmadas.
 
 Avistamientos históricos vienen de la API pública de GBIF (`api.gbif.org/v1/occurrence/search`, sin clave), filtrados por `scientificName` (limpio de anotaciones como "(grupo)"/"spp.") y `geoDistance` en un radio de 15 km sobre el punto. Depende de la especie elegida, no solo del punto: se refresca también al cambiar de seta, con su propio `AbortController` independiente de `weatherTask`/`habitatTask`. Es contexto informativo aparte; nunca cambia el nivel de la estimación final.
+
+El mapa de calor es experimental y explícitamente descartable: rejilla gorda (6×5 como mucho) sobre la vista actual del mapa, recortada al encuadre de Cataluña, calculada con las mismas fuentes que "Consultar punto" pero sin tocar `state` ni el marcador principal. Solo se calcula bajo petición explícita (botón), nunca al mover o hacer zoom en el mapa, para no disparar peticiones sin que el usuario lo pida; como mucho 4 puntos en vuelo a la vez (`runWithConcurrency`). Cambiar de especie oculta la rejilla en vez de recalcularla sola, porque reflejaría la especie anterior.
 
 ## Validación y contribuciones
 

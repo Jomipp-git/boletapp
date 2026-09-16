@@ -52,6 +52,12 @@
           <p id="soil-layer-status" role="status"></p>
           <div class="legend" aria-label="Estimación meteorológica"><span><i class="dot low"></i>Baja</span><span><i class="dot medium"></i>Media</span><span><i class="dot high"></i>Alta</span><span><i class="dot unknown"></i>Sin evaluar</span></div>
           <p id="map-note" class="small">El color evalúa el punto consultado, no todo el bosque. No representa avistamientos.</p>
+          <div class="heatmap-controls">
+            <button id="heatmap-btn" type="button" disabled>Calcular mapa de calor (vista actual, experimental)</button>
+            <button id="heatmap-hide-btn" type="button" disabled>Ocultar mapa de calor</button>
+          </div>
+          <p id="heatmap-status" class="small" role="status"></p>
+          <p class="small padded">Rejilla aproximada de pocos puntos por vista, calculada con las mismas fuentes que la consulta puntual. No sustituye a "Consultar punto"; es orientativa y experimental.</p>
           <form id="point-form" class="point-form">
             <div><label for="latitude">Latitud</label><input id="latitude" name="latitude" type="number" min="40.5" max="42.9" step="any" value="42.1" required></div>
             <div><label for="longitude">Longitud</label><input id="longitude" name="longitude" type="number" min="0.15" max="3.35" step="any" value="1.8" required></div>
@@ -78,7 +84,7 @@
               <h3 id="calendar-heading" class="small">Historial de condiciones diarias (Últimos 28 días)</h3>
               <ul class="calendar-legend">
                 <li><span aria-hidden="true">🔵</span><span><strong>SHOCK:</strong> Día en el que la lluvia acumulada alcanza el shock que, según el modelo, puede despertar al hongo debajo de la tierra.</span></li>
-                <li><span aria-hidden="true">🔴</span><span><strong>Calor / Seco:</strong> Alerta. El bosque registró calor (máxima ≥25 °C) o más de 3 días sin al menos 1,5 mm diarios de lluvia, lo que puede retrasar o cancelar la brotada.</span></li>
+                <li><span aria-hidden="true">🔴</span><span><strong>Calor / Seco / Viento:</strong> Alerta. El bosque registró calor (máxima ≥25 °C), más de 3 días sin al menos 1,5 mm diarios de lluvia, o viento fuerte (≥30 km/h), lo que puede retrasar o cancelar la brotada.</span></li>
                 <li><span aria-hidden="true">🟢</span><span><strong>Favorable:</strong> ¡Día de gloria! Ese día está dentro de la ventana favorable tras la lluvia y presenta condiciones de humedad adecuadas según el modelo. Es una señal diaria, no el nivel agregado de la estimación final.</span></li>
                 <li><span aria-hidden="true">⚪</span><span><strong>Normal (Gris):</strong> El bosque está en calma: ese día no tiene una señal destacada en el episodio analizado y el hongo puede seguir esperando condiciones favorables.</span></li>
               </ul>
