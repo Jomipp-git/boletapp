@@ -306,6 +306,16 @@ test('categorías de árbol: binomio latino entre paréntesis, con sustantivo ca
   assert.deepEqual(habitatTreeCategories('Prats calcícoles i mesòfils, amb Festuca nigrescens'), []);
 });
 
+test('tipo de suelo también se lee de "calcari"/"silici", no solo de "-ícola"', () => {
+  // Medido sobre hábitats reales: "Alzinars muntanyencs en terreny calcari" es una afirmación
+  // directa de quimismo que el vocabulario anterior se dejaba fuera.
+  assert.deepEqual(habitatSoilTypes(['Alzinars muntanyencs en terreny calcari, dels Pirineus orientals']), ['calcareous']);
+  assert.deepEqual(habitatSoilTypes(['Boscos de pi roig, neutrobasòfils i mesòfils']), ['calcareous']);
+  assert.deepEqual(habitatSoilTypes(['Brolles silícies de terra baixa']), ['acidic']);
+  // Sin ninguna afirmación de quimismo sigue quedando pendiente: no se deduce de la roca madre.
+  assert.equal(habitatSoilTypes(['Pinedes de pi blanc (Pinus halepensis), sense sotabosc llenyós']), null);
+  assert.equal(habitatSoilTypes(['Boscos de pi roig sobre granits i esquists']), null);
+});
 test('tipo de suelo se lee de "calcícola"/"silicícola" en el propio texto del hábitat', () => {
   assert.deepEqual(habitatSoilTypes(['Fagedes calcícoles, xeromesòfiles']), ['calcareous']);
   assert.deepEqual(habitatSoilTypes(["Bruguerars amb bruc d'escombres, silicícoles, dels sòls profunds"]), ['acidic']);
@@ -472,8 +482,34 @@ test('las tres variedades de rovelló difieren en suelo, no en árboles', () => 
     assert.equal(compareHabitat(species, { types: ['acidic'] }, null).soil, 'match', species.id);
     assert.equal(compareHabitat(species, { types: ['calcareous'] }, null).soil, 'match', species.id);
   }
-  for (const species of [pinetell, esclatasangs, salmonicolor]) {
+  // Pinetell y esclatasangs son de pinar; el salmonicolor NO: su huésped documentado es el
+  // abeto, así que una pineda no le vale y una avetosa sí.
+  for (const species of [pinetell, esclatasangs]) {
     assert.equal(compareHabitat(species, null, null, { covers: ['Pinedes de pi roig (Pinus sylvestris)'] }).trees, 'match', species.id);
+  }
+  assert.equal(compareHabitat(salmonicolor, null, null, { covers: ['Pinedes de pi roig (Pinus sylvestris)'] }).trees, 'mismatch');
+  assert.equal(compareHabitat(salmonicolor, null, null, { covers: ['Avetoses (Abies alba), acidòfiles'] }).trees, 'match');
+  assert.deepEqual(salmonicolor.trees, ['Abetos']);
+});
+test('el abeto se reconoce por binomio latino y por el sustantivo catalán', () => {
+  assert.deepEqual(habitatTreeCategories('Boscos d\'avet (Abies alba), acidòfils, dels Pirineus'), ['Abetos']);
+  assert.deepEqual(habitatTreeCategories('Avetoses de muntanya'), ['Abetos']);
+  assert.deepEqual(habitatTreeCategories('Avetar dens, sense sotabosc'), ['Abetos']);
+  // Bosque mixto de abeto y pino: se detectan ambos géneros, sin descartar ninguno.
+  assert.deepEqual(habitatTreeCategories('Boscos mixtos (Abies alba, Pinus uncinata)').sort(), ['Abetos', 'Pinos']);
+});
+test('distintivo de hábitat: árbol compatible sin dato de suelo es Favorable, no pendiente', () => {
+  // La cartografía solo declara el quimismo del suelo en algo más de la mitad de los bosques;
+  // no tener ese dato no puede presentarse como "no sabemos nada" si el árbol sí encaja.
+  assert.equal(habitatBadgeState({ soil: 'match', trees: 'match' }).label, 'Hábitat Óptimo');
+  assert.equal(habitatBadgeState({ soil: 'unknown', trees: 'match' }).label, 'Hábitat Favorable');
+  assert.equal(habitatBadgeState({ soil: 'unknown', trees: 'match' }).className, 'favorable');
+  // Sin árbol reconocido sigue siendo pendiente, aunque el suelo encaje: el árbol es la señal primaria.
+  assert.equal(habitatBadgeState({ soil: 'match', trees: 'unknown' }).label, 'Hábitat pendiente');
+  assert.equal(habitatBadgeState({ soil: 'unknown', trees: 'unknown' }).label, 'Hábitat pendiente');
+  // Cualquier incompatibilidad manda por encima de todo lo demás.
+  for (const habitat of [{ soil: 'mismatch', trees: 'match' }, { soil: 'match', trees: 'mismatch' }, { soil: 'mismatch', trees: 'unknown' }]) {
+    assert.equal(habitatBadgeState(habitat).label, 'Hábitat Incompatible');
   }
 });
 test('incompatibilidad del suelo o árboles fuerza final Baja sin modificar clima', () => {

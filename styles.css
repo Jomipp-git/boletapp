@@ -64,6 +64,8 @@ button:disabled { opacity: .5; cursor: default; }
 .badge { color: var(--status-color); background: var(--soft-bg); border: 1px solid currentColor; border-radius: 2rem; padding: .15rem .65rem; font-weight: 750; white-space: nowrap; }
 .result-badges { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 #habitat-badge.optimal { color: #063b1c; background: #4ade80; border-color: #15803d; }
+/* Árbol compatible pero suelo no declarado en la cartografía: verde apagado, entre Óptimo y pendiente. */
+#habitat-badge.favorable { color: #14532d; background: #bbf7d0; border-color: #4ade80; }
 .point-form { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: .75rem; padding: 1rem 1rem 0; }
 .point-form button { grid-column: 1 / -1; }
 .point-form label { font-size: .875rem; }

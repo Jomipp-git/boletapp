@@ -4,7 +4,7 @@
  * Son parámetros heurísticos, no probabilidades científicas ni identificación.
  */
 const MUSHROOM_RULES_METADATA = Object.freeze({
-  version: "1.2.0",
+  version: "1.3.0",
   source: "Valores aportados por el propietario del proyecto",
   bibliographicVerification: "pending",
   referencesToVerify: [
@@ -33,18 +33,18 @@ const MUSHROOMS = [
     note: "Antes agrupada con L. deliciosus en una sola ficha; separada con el suelo publicado por iFong (calcari) como referencia cruzada. La ventana de humedad se mantiene compartida entre las tres variedades de rovelló hasta tener datos propios por especie."
   },
   {
-    id: "rovello-salmonicolor", name: "Rovelló (Pi negre i avet)",
+    id: "rovello-salmonicolor", name: "Rovelló (Avet)",
     scientificName: "Lactarius salmonicolor",
-    trees: ["Pinos"], soilTypes: ["calcareous", "acidic"], substrate: "Calcáreo o ácido",
+    trees: ["Abetos"], soilTypes: ["calcareous", "acidic"], substrate: "Calcáreo o ácido",
     altitudeM: { min: 0, max: 1500 }, shockMm: 20, emergenceDays: { min: 14, max: 21 },
     optimalMonths: [9, 10, 11, 12], season: "Septiembre–diciembre",
     temperature: { label: "Templada", minC: 12, maxC: 20, minExclusive: false },
-    note: "Variedad no incluida en la ficha original, añadida a partir del catálogo publicado por iFong. Su huésped real (avet, abeto) no distingue todavía de Pinos en el catálogo de árboles; se agrupa ahí hasta ampliar esa taxonomía. La ventana de humedad se mantiene compartida entre las tres variedades de rovelló hasta tener datos propios por especie."
+    note: "Su huésped documentado es el abeto (Abies alba), no el pino: la ficha se llamaba antes \"pi negre i avet\" y mezclaba dos ecologías distintas. El rovelló asociado al pi negre parece corresponder a otra especie, todavía no catalogada aquí. La ventana de humedad se mantiene compartida entre las tres variedades de rovelló hasta tener datos propios por especie."
   },
   {
     id: "cep", name: "Cep", scientificName: "Boletus edulis",
     trees: ["Hayas", "Robles", "Pinos"], soilTypes: ["acidic"], substrate: "Ácido",
-    altitudeM: { min: 800, max: 2000 }, shockMm: 25, emergenceDays: { min: 10, max: 15 },
+    altitudeM: { min: 700, max: 2100 }, shockMm: 25, emergenceDays: { min: 10, max: 15 },
     optimalMonths: [9, 10, 11], season: "Septiembre–noviembre",
     temperature: { label: "Templada", minC: 12, maxC: 20, minExclusive: false },
     note: "Esta ficha se centra en B. edulis; el nombre popular también abarca otros boletos. El suelo y la altitud mínima están pendientes de contrastar con fuentes botánicas."
@@ -59,21 +59,21 @@ const MUSHROOMS = [
   {
     id: "rossinyol", name: "Rossinyol", scientificName: "Cantharellus cibarius (grupo)",
     trees: ["Encinas", "Alcornoques", "Robles"], soilTypes: ["acidic"], substrate: "Ácido",
-    altitudeM: { min: 100, max: 1400 }, shockMm: 30, emergenceDays: { min: 8, max: 14 },
+    altitudeM: { min: 100, max: 1700 }, shockMm: 30, emergenceDays: { min: 8, max: 14 },
     optimalMonths: [6, 7, 8, 9, 10, 11], season: "Junio–noviembre",
     temperature: { label: "Templada", minC: 12, maxC: 20, minExclusive: false }, note: "Ficha de un grupo de taxones con ecología variable. El suelo asociado a las encinas está pendiente de contrastar."
   },
   {
     id: "camagroc", name: "Camagroc", scientificName: "Craterellus lutescens",
     trees: ["Pinos"], soilTypes: ["calcareous"], substrate: "Calcáreo",
-    altitudeM: { min: 400, max: 1600 }, shockMm: 20, emergenceDays: { min: 15, max: 22 },
+    altitudeM: { min: 300, max: 1700 }, shockMm: 20, emergenceDays: { min: 15, max: 22 },
     optimalMonths: [10, 11, 12, 1], season: "Octubre–enero",
     temperature: { label: "Templada", minC: 12, maxC: 20, minExclusive: false }, note: "Los enclaves musgosos y umbríos mantienen mejor la humedad."
   },
   {
     id: "trompeta-mort", name: "Trompeta de la mort", scientificName: "Craterellus cornucopioides",
     trees: ["Encinas", "Hayas"], soilTypes: ["acidic"], substrate: "Ácido",
-    altitudeM: { min: 200, max: 1200 }, shockMm: 25, emergenceDays: { min: 12, max: 20 },
+    altitudeM: { min: 150, max: 1600 }, shockMm: 25, emergenceDays: { min: 12, max: 20 },
     optimalMonths: [9, 10, 11], season: "Septiembre–noviembre",
     temperature: { label: "Templada", minC: 12, maxC: 20, minExclusive: false }, note: "La regla de suelo es la aportada para este modelo V1."
   },
@@ -88,7 +88,7 @@ const MUSHROOMS = [
     id: "murgola", name: "Múrgola", scientificName: "Morchella spp.",
     trees: ["Fresnos", "Pinos"], habitats: ["Terrenos quemados, según especie"],
     soilTypes: ["calcareous", "acidic"], substrate: "Calcáreo o ácido",
-    altitudeM: { min: 500, max: 1800 }, shockMm: 15, emergenceDays: { min: 7, max: 12 },
+    altitudeM: { min: 200, max: 1850 }, shockMm: 15, emergenceDays: { min: 7, max: 12 },
     optimalMonths: [3, 4, 5], season: "Marzo–mayo",
     temperature: { label: "Primavera / Templado-Fresco", minC: null, maxC: null, minExclusive: false },
     note: "Quemados describe un hábitat, no un árbol. No todas las Morchella son pirófilas."

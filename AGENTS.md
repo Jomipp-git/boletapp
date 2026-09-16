@@ -6,7 +6,7 @@ El nombre oficial es **Buscador de Setas en Cataluña**. Web estática móvil, s
 
 - `index.html`: estructura accesible, selector, mapa, resultados y `#adsense-container`.
 - `styles.css`: estilos adaptables y estados Baja, Media, Alta y Sin evaluar.
-- `mushrooms.js`: doce especies V1 (incluye tres variedades de rovelló separadas desde v1.2.0), unidades, umbrales y procedencia.
+- `mushrooms.js`: doce especies V1 (tres variedades de rovelló separadas desde v1.2.0), unidades, umbrales y procedencia.
 - `app.js`: Leaflet/OpenStreetMap, Open-Meteo, WFS de hàbitats de la Generalitat y algoritmo de humedad.
 - `tests/`: regresiones del algoritmo, normalización, traducciones y metadatos.
 
@@ -20,7 +20,7 @@ Para GitHub Pages publica la raíz de la rama elegida. En Vercel selecciona proy
 
 Usa dos espacios, punto y coma, `const`, funciones `camelCase` e identificadores `kebab-case`. Separa datos, lógica y presentación. Mantén las traducciones ES/CA en `app.js`, sin traducir identificadores del catálogo ni respuestas usadas por el motor. Los temas usan variables CSS; el filtro oscuro afecta solo a las teselas. Inserta respuestas externas con `textContent`, nunca HTML sin sanear.
 
-Los valores numéricos proceden del propietario; su atribución bibliográfica a Ramon Pascual y Enric Gràcia está pendiente de páginas verificables. No presentes esta heurística como probabilidad científica. Mantén exactamente doce fichas y documenta agrupaciones taxonómicas. Las tres variedades de rovelló (pinetell, esclatasangs, pi negre i avet) comparten ventana de humedad hasta tener datos propios por especie; su suelo se separó usando la tabla pública de iFong como referencia cruzada, documentado en el `note` de cada ficha.
+Los valores numéricos proceden del propietario; su atribución bibliográfica a Ramon Pascual y Enric Gràcia está pendiente de páginas verificables. No presentes esta heurística como probabilidad científica. Mantén exactamente doce fichas y documenta agrupaciones taxonómicas. Las tres variedades de rovelló (pinetell, esclatasangs, avet) comparten ventana de humedad hasta tener datos propios por especie; su suelo se separó usando la tabla pública de iFong como referencia cruzada, documentado en el `note` de cada ficha. El huésped del rovelló de avet es *Abies alba*, no el pino: la ficha se renombró al comprobarlo.
 
 ## Integraciones y algoritmo
 
@@ -30,7 +30,11 @@ Detecta shocks estrictamente superiores al umbral en 48–72 horas, sin reinicia
 
 El viento (`wind_speed_10m_max`, km/h) descarta como favorable un día de incubación aunque haya llovido fino o la humedad relativa sea alta, por encima de `maxWindKmh` (30 km/h, sin verificar). Es un refinamiento, no un requisito: si Open-Meteo no lo trae o con unidades inesperadas, se trata como ausente día a día sin invalidar los 28 días de lluvia y temperatura, que sí son obligatorios.
 
-Hábitat y suelo usan un único WFS público de la Generalitat (`sig.gencat.cat/ows/HABITATS/wfs`, capa `HABITATS_TERRESTPOL`, Cartografia dels hàbitats v3): consulta puntual exacta (`INTERSECTS` sobre el punto, no una caja), sin la ambigüedad de mezclar parches vecinos que sí tenía el WMS del ICGC usado hasta la v1.2.0. El árbol dominante se extrae del género/especie en latín entre paréntesis del propio texto (más fiable que el nombre común en catalán, que varía por comarca); el carácter del suelo, de las palabras "calcícola"/"silicícola" que ya trae la descripción del hábitat. Completa la correspondencia únicamente con evidencia; sin esas palabras o sin género reconocido, queda pendiente. El mapa colorea estimaciones meteorológicas puntuales, no áreas confirmadas.
+Hábitat y suelo usan un único WFS público de la Generalitat (`sig.gencat.cat/ows/HABITATS/wfs`, capa `HABITATS_TERRESTPOL`, Cartografia dels hàbitats v3): consulta puntual exacta (`INTERSECTS` sobre el punto, no una caja), sin la ambigüedad de mezclar parches vecinos que sí tenía el WMS del ICGC usado hasta la v1.2.0. El árbol dominante se extrae del género/especie en latín entre paréntesis del propio texto (más fiable que el nombre común en catalán, que varía por comarca); el carácter del suelo, de afirmaciones directas de quimismo en esa misma descripción ("calcícola", "calcari", "basòfil", "silicícola", "silici"), nunca deducidas de la roca madre. Completa la correspondencia únicamente con evidencia; sin esas palabras o sin género reconocido, queda pendiente. El mapa colorea estimaciones meteorológicas puntuales, no áreas confirmadas.
+
+El árbol es la señal primaria y el suelo un matiz, no un requisito simétrico: medido sobre puntos reales de Catalunya, la cartografía solo declara el quimismo del suelo en algo más de la mitad de los hábitats forestales. Por eso el distintivo tiene cuatro estados —Óptimo (árbol y suelo encajan), Favorable (el árbol encaja y el suelo no consta), Incompatible (cualquiera de los dos falla) y pendiente (no se reconoce el árbol)— en vez de exigir ambos para decir algo útil. La incertidumbre que eso deja la refleja el distintivo de Confianza, que ya cuenta el hueco de suelo. Antes de este reparto, el 38 % de los puntos muestreados salía "pendiente"; después, el 3 %.
+
+Las altitudes de `mushrooms.js` se recalibraron con percentiles p5–p95 de observaciones reales de GBIF dentro del encuadre de Catalunya (no con rangos absolutos, que arrastran valores atípicos). Ese contraste corrigió suposiciones previas en ambos sentidos: el techo del rossinyol subió en vez de bajar, y el suelo del cep no se bajó a 500 m porque las observaciones catalanas no lo respaldan. Lo que no se pudo contrastar sigue sin tocarse.
 
 Avistamientos históricos vienen de la API pública de GBIF (`api.gbif.org/v1/occurrence/search`, sin clave), filtrados por `scientificName` (limpio de anotaciones como "(grupo)"/"spp.") y `geoDistance` en un radio de 15 km sobre el punto. Depende de la especie elegida, no solo del punto: se refresca también al cambiar de seta, con su propio `AbortController` independiente de `weatherTask`/`habitatTask`. Es contexto informativo aparte; nunca cambia el nivel de la estimación final.
 
