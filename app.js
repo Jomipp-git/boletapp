@@ -272,7 +272,9 @@ function normalizeVegetation(payload) {
 
 // Textos editoriales informativos; no son claves de identificación.
 const SEO_DESCRIPTIONS = Object.freeze({
-  "rovello-pinetell": "El níscalo y el robellón destacan por sus sombreros de tonos anaranjados o rojizos y su carne firme. En los pinares de Cataluña suelen aparecer entre acículas y hojarasca, a veces parcialmente ocultos bajo el suelo superficial. Las lluvias de otoño favorecen su aparición cuando la humedad persiste. Son protagonistas de la cocina catalana, especialmente en preparaciones a la brasa y guisos que aprovechan su textura y aroma forestal.",
+  "rovello-pinetell": "El pinetell (Lactarius deliciosus) destaca por su sombrero anaranjado con tonos claros y su carne que vira al verde al cortarla, más suave que la del esclatasangs. En los pinares de Cataluña suele aparecer entre acículas y hojarasca, a veces parcialmente oculto bajo el suelo superficial. Las lluvias de otoño favorecen su aparición cuando la humedad persiste. Es un habitual de la cocina catalana, especialmente en preparaciones a la brasa y guisos que aprovechan su textura y aroma forestal.",
+  "rovello-esclatasangs": "El esclatasangs (Lactarius sanguifluus) se reconoce por su sombrero rojo vinoso y su látex de color sangre que se oscurece al aire, más intenso que el del pinetell. Crece en pinares sobre terreno calcáreo, entre acículas y musgo que dificultan verlo hasta agacharse. Las primeras lluvias de otoño marcan el inicio de su temporada en Cataluña. Es una de las setas más apreciadas de la cocina catalana, sobre todo a la brasa con un simple chorro de aceite y ajo.",
+  "rovello-salmonicolor": "El rovelló de pi negre i avet (Lactarius salmonicolor) tiene un sombrero anaranjado pálido y un látex asalmonado, más claro que el de sus parientes de pinar. Crece asociado a pinares de pi negre y a abetales de montaña, por encima de los bosques donde aparecen el pinetell y el esclatasangs. Su temporada llega con las lluvias frías de otoño en zonas altas. Se cocina igual que el resto de rovellons, aunque su carne algo más blanda pide cocciones cortas.",
   "cep": "El Boleto presenta un sombrero pardo, un pie robusto y una superficie de poros bajo el sombrero, en lugar de láminas. Se encuentra en bosques frescos de hayas, robles y coníferas, donde puede quedar disimulado entre hojas y musgo. Su aroma y su carne consistente explican su prestigio gastronómico. Se utiliza en arroces, salsas y guisos, mientras que su versión deshidratada permite incorporar notas intensas a numerosas elaboraciones.",
   "cama-perdiu": "La Pata de perdiz tiene un sombrero de tonos cobrizos y láminas que descienden por el pie. Su aspecto puede confundirse con el de otras setas, por lo que una descripción breve no basta para identificarla. Habita principalmente en pinares, entre acículas y restos vegetales que dificultan verla. En la tradición culinaria se aprovecha cocinada, a menudo en mezclas de setas, por una textura que complementa arroces y guisos.",
   "rossinyol": "El Rebozuelo llama la atención por sus tonos amarillos y su sombrero irregular, con pliegues que recorren la cara inferior. Suele crecer en rincones frescos de bosques de frondosas, protegido por hojarasca y sombra. Encontrarlo depende de la humedad conservada en el terreno, además de la lluvia reciente. Su aroma delicado y su textura firme lo convierten en una seta apreciada para salteados, salsas y acompañamientos de platos de temporada.",
@@ -390,6 +392,24 @@ function habitatBadgeState(habitat) {
   return { className: "unknown", label: "Hábitat pendiente" };
 }
 
+// Señal de confianza sobre el propio dato de entrada, no sobre la seta: cuenta huecos ya
+// detectados (humedad horaria incompleta, suelo o árboles pendientes) en vez de calcular nada
+// nuevo. Sin datos meteorológicos no hay estimación que evaluar, así que es Baja directamente.
+function estimateConfidence(climate, habitat) {
+  if (climate.level === "unknown") {
+    return { level: "low", reasons: ["Sin datos meteorológicos suficientes para estimar."] };
+  }
+  const gaps = [];
+  if (climate.reasons.some((reason) => reason.includes("Humedad horaria incompleta"))) {
+    gaps.push("Humedad horaria incompleta en el histórico.");
+  }
+  if (habitat.soil === "unknown") gaps.push("Suelo pendiente de verificar en este punto.");
+  if (habitat.trees === "unknown") gaps.push("Árboles pendientes de verificar en este punto.");
+  if (gaps.length === 0) return { level: "high", reasons: ["Suelo, árboles y humedad horaria disponibles para este punto."] };
+  if (gaps.length === 1) return { level: "medium", reasons: gaps };
+  return { level: "low", reasons: gaps };
+}
+
 function geocodingUrl(query, endpoint = "https://nominatim.openstreetmap.org/search") {
   const url = new URL(endpoint);
   url.search = new URLSearchParams({ q: query.trim(), format: "jsonv2", limit: 1,
@@ -438,10 +458,12 @@ function whatsappShareUrl(link, speciesName, habitatLabel, level, date) {
 }
 
 const SPECIES_NAMES_ES = Object.freeze({
-  "rovello-pinetell": "Níscalo/Robellón", cep: "Boleto", "cama-perdiu": "Pata de perdiz", rossinyol: "Rebozuelo", camagroc: "Angula de monte", "trompeta-mort": "Trompeta de los muertos", "llenega-negra": "Llanega negra", murgola: "Colmenilla", fredolic: "Negrilla", "ous-reig": "Oronja"
+  "rovello-pinetell": "Níscalo (Pinetell)", "rovello-esclatasangs": "Níscalo (Esclatasangs)", "rovello-salmonicolor": "Níscalo (Pi negro y abeto)", cep: "Boleto", "cama-perdiu": "Pata de perdiz", rossinyol: "Rebozuelo", camagroc: "Angula de monte", "trompeta-mort": "Trompeta de los muertos", "llenega-negra": "Llanega negra", murgola: "Colmenilla", fredolic: "Negrilla", "ous-reig": "Oronja"
 });
 const SEO_CA = Object.freeze({
-  "rovello-pinetell": "El rovelló i el pinetell destaquen pels barrets de tons ataronjats o rogencs i la carn ferma. A les pinedes de Catalunya solen aparèixer entre agulles i fullaraca, de vegades parcialment amagats sota el sòl superficial. Les pluges de tardor n'afavoreixen l'aparició quan la humitat persisteix. Són protagonistes de la cuina catalana, especialment en preparacions a la brasa i guisats que aprofiten la seva textura i aroma de bosc.",
+  "rovello-pinetell": "El pinetell (Lactarius deliciosus) destaca pel barret ataronjat de tons clars i la carn que vira al verd en tallar-la, més suau que la de l'esclatasang. A les pinedes de Catalunya sol aparèixer entre agulles i fullaraca, de vegades parcialment amagat sota el sòl superficial. Les pluges de tardor n'afavoreixen l'aparició quan la humitat persisteix. És habitual a la cuina catalana, especialment en preparacions a la brasa i guisats que aprofiten la seva textura i aroma de bosc.",
+  "rovello-esclatasangs": "L'esclatasang (Lactarius sanguifluus) es reconeix pel barret vermell vinós i el làtex de color sang que s'enfosqueix a l'aire, més intens que el del pinetell. Creix en pinedes sobre terreny calcari, entre agulles i molsa que en dificulten la troballa fins que t'ajups. Les primeres pluges de tardor marquen l'inici de la seva temporada a Catalunya. És un dels bolets més apreciats de la cuina catalana, sobretot a la brasa amb un raig d'oli i all.",
+  "rovello-salmonicolor": "El rovelló de pi negre i avet (Lactarius salmonicolor) té un barret ataronjat pàl·lid i un làtex salmó, més clar que el dels seus parents de pineda. Creix associat a pinedes de pi negre i a avetoses de muntanya, per sobre dels boscos on apareixen el pinetell i l'esclatasang. La seva temporada arriba amb les pluges fredes de tardor en zones altes. Es cuina igual que la resta de rovellons, tot i que la carn més tova demana coccions curtes.",
   cep: "El cep presenta un barret bru, un peu robust i una superfície de porus sota el barret, en lloc de làmines. Es troba en boscos frescos de faigs, roures i coníferes, on pot quedar dissimulat entre fulles i molsa. L'aroma i la carn consistent expliquen el seu prestigi gastronòmic. Es fa servir en arrossos, salses i guisats, mentre que la versió deshidratada permet incorporar notes intenses a nombroses elaboracions.",
   "cama-perdiu": "La cama de perdiu té un barret de tons rogencs i làmines que baixen pel peu. El seu aspecte es pot confondre amb el d'altres bolets, de manera que una descripció breu no és suficient per identificar-la. Viu principalment en pinedes, entre agulles i restes vegetals que en dificulten la descoberta. En la tradició culinària s'aprofita cuita, sovint en barreges de bolets, per una textura que complementa arrossos i guisats.",
   rossinyol: "El rossinyol crida l'atenció pels tons grocs i el barret irregular, amb plecs que recorren la cara inferior. Sol créixer en racons frescos de boscos de frondoses, protegit per la fullaraca i l'ombra. Trobar-lo depèn de la humitat conservada al terreny, a més de la pluja recent. L'aroma delicada i la textura ferma el converteixen en un bolet apreciat per a saltats, salses i acompanyaments de plats de temporada.",
@@ -454,7 +476,7 @@ const SEO_CA = Object.freeze({
 });
 const TRANSLATIONS = Object.freeze({
   "Buscador de Setas en Cataluña": "Cercador de Bolets a Catalunya",
-  "CATÁLOGO V1 · 10 ESPECIES": "CATÀLEG V1 · 10 ESPÈCIES",
+  "CATÁLOGO V1 · 12 ESPECIES": "CATÀLEG V1 · 12 ESPÈCIES",
   "LLUVIA · HÁBITAT · TEMPORADA": "PLUJA · HÀBITAT · TEMPORADA",
   "Ir al selector de setas": "Ves al selector de bolets",
   "Selecciona una seta y un punto del mapa para consultar su ventana de humedad.": "Selecciona un bolet i un punt del mapa per consultar-ne la finestra d'humitat.",
@@ -462,6 +484,12 @@ const TRANSLATIONS = Object.freeze({
   "Modo oscuro": "Mode fosc", "Modo claro": "Mode clar", "ELIGE UN PUNTO": "TRIA UN PUNT", "Mapa de Cataluña": "Mapa de Catalunya", "Centrar Cataluña": "Centra Catalunya",
   "Buscar un lugar en Cataluña": "Cerca un lloc a Catalunya", "Buscar lugar": "Cerca un lloc", "Búsqueda:": "Cerca:", "Introduce lugares públicos, no datos personales.": "Introdueix llocs públics, no dades personals.",
   "Mapa interactivo de Cataluña": "Mapa interactiu de Catalunya", "Cargando mapa…": "Carregant el mapa…", "Estimación meteorológica": "Estimació meteorològica", "Probabilidad meteorológica:": "Probabilitat meteorològica:",
+  "Confianza": "Confiança", "Confianza del dato:": "Confiança de la dada:",
+  "Sin datos meteorológicos suficientes para estimar.": "No hi ha prou dades meteorològiques per estimar-ho.",
+  "Humedad horaria incompleta en el histórico.": "Humitat horària incompleta a l'historial.",
+  "Suelo pendiente de verificar en este punto.": "Sòl pendent de verificar en aquest punt.",
+  "Árboles pendientes de verificar en este punto.": "Arbres pendents de verificar en aquest punt.",
+  "Suelo, árboles y humedad horaria disponibles para este punto.": "Sòl, arbres i humitat horària disponibles per a aquest punt.",
   "El color evalúa el punto consultado, no todo el bosque. No representa avistamientos.": "El color avalua el punt consultat, no tot el bosc. No representa observacions.",
   "Latitud": "Latitud", "Longitud": "Longitud", "Consultar punto": "Consulta el punt", "Puedes usar las coordenadas sin interactuar con el mapa. El área de consulta es un encuadre aproximado de Cataluña.": "Pots fer servir les coordenades sense interactuar amb el mapa. L'àrea de consulta és un enquadrament aproximat de Catalunya.",
   "Ventana óptima de humedad": "Finestra òptima d'humitat", "Terreno": "Terreny", "Baja": "Baixa", "Media": "Mitjana", "Alta": "Alta", "Sin evaluar": "Sense avaluar", "Hábitat pendiente": "Hàbitat pendent", "Hábitat Óptimo": "Hàbitat Òptim", "Hábitat Incompatible": "Hàbitat Incompatible",
@@ -485,7 +513,7 @@ const TRANSLATIONS = Object.freeze({
   "Pinos": "Pins", "Hayas": "Faigs", "Robles": "Roures", "Encinas": "Alzines", "Alcornoques": "Sureres", "Fresnos": "Freixes", "Castaños": "Castanyers", "Calcáreo o ácido": "Calcari o àcid", "Calcáreo": "Calcari", "Ácido": "Àcid", "Silíceo / ácido": "Silici / àcid", "Terrenos quemados, según especie": "Terrenys cremats, segons l'espècie",
   "Septiembre–diciembre": "Setembre–desembre", "Septiembre–noviembre": "Setembre–novembre", "Octubre–diciembre": "Octubre–desembre", "Junio–noviembre": "Juny–novembre", "Octubre–enero": "Octubre–gener", "Marzo–mayo": "Març–maig", "Noviembre–enero": "Novembre–gener", "Agosto–octubre": "Agost–octubre",
   "Templada": "Temperada", "Frío moderado": "Fred moderat", "Frío severo": "Fred intens", "Primavera / Templado-Fresco": "Primavera / Temperat-fresc", "sin rango numérico definido": "sense rang numèric definit", "(grupo)": "(grup)",
-  "La regla agrupa dos especies; sus preferencias reales pueden diferir.": "La regla agrupa dues espècies; les preferències reals poden diferir.", "Esta ficha se centra en B. edulis; el nombre popular también abarca otros boletos.": "Aquesta fitxa se centra en B. edulis; el nom popular també inclou altres ceps.", "El suelo y la altitud mínima están pendientes de contrastar con fuentes botánicas.": "El sòl i l'altitud mínima estan pendents de contrastar amb fonts botàniques.", "El nombre puede incluir especies próximas de Chroogomphus.": "El nom pot incloure espècies pròximes de Chroogomphus.", "Ficha de un grupo de taxones con ecología variable.": "Fitxa d'un grup de tàxons amb ecologia variable.", "El suelo asociado a las encinas está pendiente de contrastar.": "El sòl associat a les alzines està pendent de contrastar.", "Los enclaves musgosos y umbríos mantienen mejor la humedad.": "Els indrets amb molsa i ombra conserven millor la humitat.", "La regla de suelo es la aportada para este modelo V1.": "La regla de sòl és l'aportada per a aquest model V1.", "La ventana larga requiere consultar más de dos semanas de histórico.": "La finestra llarga requereix consultar més de dues setmanes d'historial.", "Quemados describe un hábitat, no un árbol. No todas las Morchella son pirófilas.": "Cremats descriu un hàbitat, no un arbre. No totes les Morchella són piròfiles.", "Rango de frío aportado: 2–12 °C, ambos extremos incluidos.": "Rang de fred aportat: 2–12 °C, tots dos extrems inclosos.", "Requiere una media estrictamente superior a 20 °C.": "Requereix una mitjana estrictament superior a 20 °C.", "El suelo asociado a las encinas y castaños está pendiente de contrastar.": "El sòl associat a les alzines i castanyers està pendent de contrastar.",
+  "La regla agrupa dos especies; sus preferencias reales pueden diferir.": "La regla agrupa dues espècies; les preferències reals poden diferir.", "Esta ficha se centra en B. edulis; el nombre popular también abarca otros boletos.": "Aquesta fitxa se centra en B. edulis; el nom popular també inclou altres ceps.", "El suelo y la altitud mínima están pendientes de contrastar con fuentes botánicas.": "El sòl i l'altitud mínima estan pendents de contrastar amb fonts botàniques.", "El nombre puede incluir especies próximas de Chroogomphus.": "El nom pot incloure espècies pròximes de Chroogomphus.", "Antes agrupada con L. sanguifluus en una sola ficha; separada con el suelo publicado por iFong (calcari i silici) como referencia cruzada.": "Abans agrupada amb L. sanguifluus en una sola fitxa; separada amb el sòl publicat per iFong (calcari i silici) com a referència creuada.", "Antes agrupada con L. deliciosus en una sola ficha; separada con el suelo publicado por iFong (calcari) como referencia cruzada.": "Abans agrupada amb L. deliciosus en una sola fitxa; separada amb el sòl publicat per iFong (calcari) com a referència creuada.", "La ventana de humedad se mantiene compartida entre las tres variedades de rovelló hasta tener datos propios por especie.": "La finestra d'humitat es manté compartida entre les tres varietats de rovelló fins a tenir dades pròpies per espècie.", "Variedad no incluida en la ficha original, añadida a partir del catálogo publicado por iFong. Su huésped real (avet, abeto) no distingue todavía de Pinos en el catálogo de árboles; se agrupa ahí hasta ampliar esa taxonomía.": "Varietat no inclosa a la fitxa original, afegida a partir del catàleg publicat per iFong. El seu hoste real (avet) encara no es distingeix de Pins al catàleg d'arbres; s'hi agrupa fins ampliar aquesta taxonomia.", "Ficha de un grupo de taxones con ecología variable.": "Fitxa d'un grup de tàxons amb ecologia variable.", "El suelo asociado a las encinas está pendiente de contrastar.": "El sòl associat a les alzines està pendent de contrastar.", "Los enclaves musgosos y umbríos mantienen mejor la humedad.": "Els indrets amb molsa i ombra conserven millor la humitat.", "La regla de suelo es la aportada para este modelo V1.": "La regla de sòl és l'aportada per a aquest model V1.", "La ventana larga requiere consultar más de dos semanas de histórico.": "La finestra llarga requereix consultar més de dues setmanes d'historial.", "Quemados describe un hábitat, no un árbol. No todas las Morchella son pirófilas.": "Cremats descriu un hàbitat, no un arbre. No totes les Morchella són piròfiles.", "Rango de frío aportado: 2–12 °C, ambos extremos incluidos.": "Rang de fred aportat: 2–12 °C, tots dos extrems inclosos.", "Requiere una media estrictamente superior a 20 °C.": "Requereix una mitjana estrictament superior a 20 °C.", "El suelo asociado a las encinas y castaños está pendiente de contrastar.": "El sòl associat a les alzines i castanyers està pendent de contrastar.",
   "Comprobación del hábitat": "Comprovació de l'hàbitat", "Consultando suelo ICGC…": "Consultant el sòl ICGC…", "Elige un punto para consultar el suelo.": "Tria un punt per consultar el sòl.", "Sin unidad de suelo disponible en este punto.": "Sense unitat de sòl disponible en aquest punt.", "Compatibilidad heurística de suelo y árboles, independiente de la lluvia y la altitud; no confirma presencia de setas.": "Compatibilitat heurística de sòl i arbres, independent de la pluja i l'altitud; no confirma la presència de bolets.",
   "Dentro del rango habitual": "Dins del rang habitual", "Fuera del rango habitual": "Fora del rang habitual", "Pendiente de verificar": "Pendent de verificar",
   "Suelo: Óptimo (Terreno adecuado para esta especie)": "Sòl: Òptim (Terreny adequat per a aquesta espècie)", "Suelo: Incompatible (Tipo de terreno no apto)": "Sòl: Incompatible (Tipus de terreny no apte)", "Suelo: Pendiente de verificar (No hay información suficiente del terreno)": "Sòl: Pendent de verificar (No hi ha prou informació del terreny)",
@@ -505,8 +533,8 @@ const translationPattern = new RegExp(Object.keys(TRANSLATIONS).sort((a, b) => b
 function translateText(text, language) {
   text = String(text ?? "");
   if (language === "ca") return text.replace(translationPattern, (match) => TRANSLATIONS[match]);
-  const names = { "El Rovelló y el Pinetell": "El níscalo y el robellón", "Rovelló/Pinetell": "Níscalo/Robellón", "Cama de perdiu": "Pata de perdiz", "Trompeta de la mort": "Trompeta de los muertos", "Llenega negra": "Llanega negra", "Los Ous de reig": "Las oronjas", "Ous de reig": "Oronja", "Cep": "Boleto", "Rossinyol": "Rebozuelo", "Camagroc": "Angula de monte", "Múrgola": "Colmenilla", "Fredolic": "Negrilla" };
-  return text.replace(/El Rovelló y el Pinetell|Rovelló\/Pinetell|Cama de perdiu|Trompeta de la mort|Llenega negra|Los Ous de reig|Ous de reig|Cep|Rossinyol|Camagroc|Múrgola|Fredolic/g, (match) => names[match]);
+  const names = { "Rovelló (Pinetell)": "Níscalo (Pinetell)", "Rovelló (Esclatasangs)": "Níscalo (Esclatasangs)", "Rovelló (Pi negre i avet)": "Níscalo (Pi negro y abeto)", "Cama de perdiu": "Pata de perdiz", "Trompeta de la mort": "Trompeta de los muertos", "Llenega negra": "Llanega negra", "Los Ous de reig": "Las oronjas", "Ous de reig": "Oronja", "Cep": "Boleto", "Rossinyol": "Rebozuelo", "Camagroc": "Angula de monte", "Múrgola": "Colmenilla", "Fredolic": "Negrilla" };
+  return text.replace(/Rovelló \(Pinetell\)|Rovelló \(Esclatasangs\)|Rovelló \(Pi negre i avet\)|Cama de perdiu|Trompeta de la mort|Llenega negra|Los Ous de reig|Ous de reig|Cep|Rossinyol|Camagroc|Múrgola|Fredolic/g, (match) => names[match]);
 }
 function metadataFor(speciesName, place, language) {
   return language === "ca" ? {
@@ -779,6 +807,11 @@ function initApp() {
     const analysis = applyVegetationPenalty(climate, habitat);
     paint(climate.level, analysis.level);
     setText($("final-estimate"), `Estimación final: ${names[analysis.level]}${habitat.soil === "mismatch" || habitat.trees === "mismatch" ? " — restricción biológica por hábitat incompatible" : ""}`);
+    const confidence = estimateConfidence(climate, habitat);
+    $("confidence-badge").className = `badge ${confidence.level}`;
+    setText($("confidence-badge"), names[confidence.level]);
+    $("confidence-badge").title = confidence.reasons.map((reason) => t(reason)).join(" ");
+    $("confidence-badge").setAttribute("aria-label", t(`Confianza del dato: ${names[confidence.level]}`));
     if (!state.weather) {
       for (const id of ["weather-metrics", "mini-calendar", "weather-period", "weather-reasons", "weather-shock"]) $(id).replaceChildren();
       $("calendar-empty").hidden = false;
@@ -964,6 +997,6 @@ function initApp() {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, soilInfoUrl, normalizeSoil, compareHabitat, vegetationInfoUrl, normalizeVegetation, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription };
+  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, soilInfoUrl, normalizeSoil, compareHabitat, vegetationInfoUrl, normalizeVegetation, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, estimateConfidence, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription };
 }
 if (typeof document !== "undefined") initApp();

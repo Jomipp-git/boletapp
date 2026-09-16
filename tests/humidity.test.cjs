@@ -23,10 +23,23 @@ const withShock = (age, amount = 21) => {
 };
 
 test('catálogo V1 exacto y umbrales del propietario', () => {
-  assert.equal(MUSHROOMS.length, 10);
-  assert.equal(new Set(MUSHROOMS.map(s => s.id)).size, 10);
-  assert.deepEqual(MUSHROOMS.map(s => s.shockMm), [20, 25, 15, 30, 20, 25, 20, 15, 15, 30]);
-  assert.deepEqual(MUSHROOMS.map(s => [s.emergenceDays.min, s.emergenceDays.max]), [[14,21],[10,15],[12,18],[8,14],[15,22],[12,20],[18,25],[7,12],[10,15],[6,10]]);
+  assert.equal(MUSHROOMS.length, 12);
+  assert.equal(new Set(MUSHROOMS.map(s => s.id)).size, 12);
+  const byId = (id) => MUSHROOMS.find(s => s.id === id);
+  const expectedShockMm = {
+    "rovello-pinetell": 20, "rovello-esclatasangs": 20, "rovello-salmonicolor": 20,
+    cep: 25, "cama-perdiu": 15, rossinyol: 30, camagroc: 20, "trompeta-mort": 25,
+    "llenega-negra": 20, murgola: 15, fredolic: 15, "ous-reig": 30
+  };
+  const expectedEmergence = {
+    "rovello-pinetell": [14, 21], "rovello-esclatasangs": [14, 21], "rovello-salmonicolor": [14, 21],
+    cep: [10, 15], "cama-perdiu": [12, 18], rossinyol: [8, 14], camagroc: [15, 22], "trompeta-mort": [12, 20],
+    "llenega-negra": [18, 25], murgola: [7, 12], fredolic: [10, 15], "ous-reig": [6, 10]
+  };
+  for (const id of Object.keys(expectedShockMm)) {
+    assert.equal(byId(id).shockMm, expectedShockMm[id], id);
+    assert.deepEqual([byId(id).emergenceDays.min, byId(id).emergenceDays.max], expectedEmergence[id], id);
+  }
 });
 test('sin shock y umbral igual no se consideran favorables', () => {
   assert.equal(analyzeHumidity(species, makeDays()).level, 'low');
@@ -51,7 +64,7 @@ test('ventana inclusiva: antes, primer día, último día, después', () => {
 test('la ventana de Llenega a 25 días usa los 28 días', () => {
   const days = setMonth(withShock(25), 10);
   days.forEach(day => day.meanC = 7);
-  assert.equal(analyzeHumidity(MUSHROOMS[6], days).level, 'high');
+  assert.equal(analyzeHumidity(MUSHROOMS.find(s => s.id === 'llenega-negra'), days).level, 'high');
 });
 test('cuatro días secos calientes cancelan; tres no', () => {
   const days = withShock(14);
@@ -86,18 +99,21 @@ test('falta de humedad o humedad incompleta limita a Media', () => {
   assert.equal(analyzeHumidity(species, days).level, 'medium');
 });
 test('primavera, frío y calor condicionan la evaluación', () => {
-  assert.equal(analyzeHumidity(MUSHROOMS[7], withShock(8, 16)).level, 'low');
+  const murgola = MUSHROOMS.find(s => s.id === 'murgola');
+  const fredolic = MUSHROOMS.find(s => s.id === 'fredolic');
+  const ousReig = MUSHROOMS.find(s => s.id === 'ous-reig');
+  assert.equal(analyzeHumidity(murgola, withShock(8, 16)).level, 'low');
   const spring = withShock(8, 16);
   spring.forEach((day, i) => day.date = new Date(Date.UTC(2026, 3, i + 1)).toISOString().slice(0, 10));
-  assert.equal(analyzeHumidity(MUSHROOMS[7], spring).level, 'high');
+  assert.equal(analyzeHumidity(murgola, spring).level, 'high');
   const cold = setMonth(withShock(12, 16), 11);
-  assert.equal(analyzeHumidity(MUSHROOMS[8], cold).level, 'low');
+  assert.equal(analyzeHumidity(fredolic, cold).level, 'low');
   cold.forEach(day => day.meanC = 12);
-  assert.equal(analyzeHumidity(MUSHROOMS[8], cold).level, 'high');
+  assert.equal(analyzeHumidity(fredolic, cold).level, 'high');
   const warm = withShock(8, 31);
-  assert.equal(analyzeHumidity(MUSHROOMS[9], warm).level, 'low');
+  assert.equal(analyzeHumidity(ousReig, warm).level, 'low');
   warm.forEach(day => { day.meanC = 21; day.maxC = 24; });
-  assert.equal(analyzeHumidity(MUSHROOMS[9], warm).level, 'high');
+  assert.equal(analyzeHumidity(ousReig, warm).level, 'high');
 });
 test('no evaluar datos incompletos ni saltos de fecha', () => {
   assert.equal(analyzeHumidity(species, makeDays().slice(1)).level, 'unknown');
@@ -147,10 +163,10 @@ test('consulta 28 días completos en Madrid sin previsión futura', () => {
   assert.equal(url.searchParams.get('timezone'), 'Europe/Madrid');
 });
 
-test('meses exactos de las diez fichas', () => {
+test('meses exactos de las doce fichas', () => {
   assert.deepEqual(MUSHROOMS.map(s => s.optimalMonths), [
-    [9,10,11,12], [9,10,11], [10,11,12], [6,7,8,9,10,11], [10,11,12,1],
-    [9,10,11], [10,11,12], [3,4,5], [11,12,1], [8,9,10]
+    [9,10,11,12], [9,10,11,12], [9,10,11,12], [9,10,11], [10,11,12], [6,7,8,9,10,11],
+    [10,11,12,1], [9,10,11], [10,11,12], [3,4,5], [11,12,1], [8,9,10]
   ]);
 });
 test('cada especie descarta todos sus meses no óptimos y admite los óptimos', () => {
@@ -174,8 +190,9 @@ test('rangos térmicos inclusivos y calor estrictamente mayor que 20', () => {
       assert.equal(analyzeHumidity(item, days).level, level, `${item.name}: ${meanC} °C`);
     }
   }
-  assert.equal(MUSHROOMS[7].temperature.minC, null);
-  assert.equal(MUSHROOMS[7].temperature.maxC, null);
+  const murgola = MUSHROOMS.find(s => s.id === 'murgola');
+  assert.equal(murgola.temperature.minC, null);
+  assert.equal(murgola.temperature.maxC, null);
 });
 test('se usa el mes actual en Madrid, no el del último día meteorológico', () => {
   const days = withShock(14);
@@ -328,7 +345,7 @@ test('aciculifolis y coníferes activan compatibilidad y el texto solicitado', (
   assert.match(treeCompatibilityText({ trees: ['Pinos'] }, null, 'unknown'), /Pendientes/);
 });
 test('todas las especies tienen textos editoriales de 60 a 80 palabras', () => {
-  assert.equal(Object.keys(SEO_DESCRIPTIONS).length, 10);
+  assert.equal(Object.keys(SEO_DESCRIPTIONS).length, 12);
   for (const item of MUSHROOMS) {
     const length = SEO_DESCRIPTIONS[item.id].trim().split(/\s+/).length;
     assert.ok(length >= 60 && length <= 80, item.name);
@@ -338,7 +355,23 @@ test('todas las especies tienen textos editoriales de 60 a 80 palabras', () => {
   assert.ok(html.includes(SEO_DESCRIPTIONS['rovello-pinetell']));
 });
 
-const { habitatBadgeState } = require('../app.js');
+const { habitatBadgeState, estimateConfidence } = require('../app.js');
+test('confianza cuenta huecos de dato: humedad horaria, suelo y árboles pendientes', () => {
+  const full = { soil: 'match', trees: 'match' };
+  const soilPending = { soil: 'unknown', trees: 'match' };
+  const treesPending = { soil: 'match', trees: 'unknown' };
+  const bothPending = { soil: 'unknown', trees: 'unknown' };
+  const okClimate = { level: 'high', reasons: ['Dentro de ventana: día 14 de 14–21.'] };
+  const gapClimate = { level: 'medium', reasons: ['Humedad horaria incompleta: estimación base limitada a Media.'] };
+  assert.equal(estimateConfidence({ level: 'unknown', reasons: [] }, full).level, 'low');
+  assert.equal(estimateConfidence(okClimate, full).level, 'high');
+  assert.equal(estimateConfidence(okClimate, soilPending).level, 'medium');
+  assert.equal(estimateConfidence(okClimate, treesPending).level, 'medium');
+  assert.equal(estimateConfidence(okClimate, bothPending).level, 'low');
+  assert.equal(estimateConfidence(gapClimate, full).level, 'medium');
+  assert.equal(estimateConfidence(gapClimate, soilPending).level, 'low');
+  assert.match(estimateConfidence(gapClimate, bothPending).reasons.join(' '), /Humedad horaria/);
+});
 test('distintivo de hábitat exige suelo y árboles compatibles', () => {
   for (const soil of ['match', 'mismatch', 'unknown']) {
     for (const trees of ['match', 'mismatch', 'unknown']) {
@@ -368,6 +401,22 @@ test('botánica: pinares y frondosas se cruzan con todos los huéspedes de la se
     assert.equal(compareHabitat(item, null, null, { covers: ['frondoses'] }).trees, 'match', name);
   }
   assert.equal(matchVegetation({ trees: ['Castaños'] }, { covers: ['esclerofil-les'] }), 'match');
+});
+test('las tres variedades de rovelló difieren en suelo, no en árboles', () => {
+  const pinetell = MUSHROOMS.find(s => s.id === 'rovello-pinetell');
+  const esclatasangs = MUSHROOMS.find(s => s.id === 'rovello-esclatasangs');
+  const salmonicolor = MUSHROOMS.find(s => s.id === 'rovello-salmonicolor');
+  // Esclatasangs (L. sanguifluus) es la única de las tres exclusivamente calcárea, según la
+  // tabla publicada por iFong usada como referencia cruzada.
+  assert.equal(compareHabitat(esclatasangs, { types: ['acidic'] }, null).soil, 'mismatch');
+  assert.equal(compareHabitat(esclatasangs, { types: ['calcareous'] }, null).soil, 'match');
+  for (const species of [pinetell, salmonicolor]) {
+    assert.equal(compareHabitat(species, { types: ['acidic'] }, null).soil, 'match', species.id);
+    assert.equal(compareHabitat(species, { types: ['calcareous'] }, null).soil, 'match', species.id);
+  }
+  for (const species of [pinetell, esclatasangs, salmonicolor]) {
+    assert.equal(compareHabitat(species, null, null, { covers: ['aciculifolis'] }).trees, 'match', species.id);
+  }
 });
 test('incompatibilidad del suelo o árboles fuerza final Baja sin modificar clima', () => {
   const climate = { level: 'high', reasons: ['Buen clima'] };

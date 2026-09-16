@@ -4,7 +4,7 @@
  * Son parámetros heurísticos, no probabilidades científicas ni identificación.
  */
 const MUSHROOM_RULES_METADATA = Object.freeze({
-  version: "1.1.0",
+  version: "1.2.0",
   source: "Valores aportados por el propietario del proyecto",
   bibliographicVerification: "pending",
   referencesToVerify: [
@@ -15,13 +15,31 @@ const MUSHROOM_RULES_METADATA = Object.freeze({
 
 const MUSHROOMS = [
   {
-    id: "rovello-pinetell", name: "Rovelló/Pinetell",
-    scientificName: "Lactarius sanguifluus / Lactarius deliciosus",
+    id: "rovello-pinetell", name: "Rovelló (Pinetell)",
+    scientificName: "Lactarius deliciosus",
+    trees: ["Pinos"], soilTypes: ["calcareous", "acidic"], substrate: "Calcáreo o ácido",
+    altitudeM: { min: 0, max: 1500 }, shockMm: 20, emergenceDays: { min: 14, max: 21 },
+    optimalMonths: [9, 10, 11, 12], season: "Septiembre–diciembre",
+    temperature: { label: "Templada", minC: 12, maxC: 20, minExclusive: false },
+    note: "Antes agrupada con L. sanguifluus en una sola ficha; separada con el suelo publicado por iFong (calcari i silici) como referencia cruzada. La ventana de humedad se mantiene compartida entre las tres variedades de rovelló hasta tener datos propios por especie."
+  },
+  {
+    id: "rovello-esclatasangs", name: "Rovelló (Esclatasangs)",
+    scientificName: "Lactarius sanguifluus",
     trees: ["Pinos"], soilTypes: ["calcareous"], substrate: "Calcáreo",
     altitudeM: { min: 0, max: 1500 }, shockMm: 20, emergenceDays: { min: 14, max: 21 },
     optimalMonths: [9, 10, 11, 12], season: "Septiembre–diciembre",
     temperature: { label: "Templada", minC: 12, maxC: 20, minExclusive: false },
-    note: "La regla agrupa dos especies; sus preferencias reales pueden diferir."
+    note: "Antes agrupada con L. deliciosus en una sola ficha; separada con el suelo publicado por iFong (calcari) como referencia cruzada. La ventana de humedad se mantiene compartida entre las tres variedades de rovelló hasta tener datos propios por especie."
+  },
+  {
+    id: "rovello-salmonicolor", name: "Rovelló (Pi negre i avet)",
+    scientificName: "Lactarius salmonicolor",
+    trees: ["Pinos"], soilTypes: ["calcareous", "acidic"], substrate: "Calcáreo o ácido",
+    altitudeM: { min: 0, max: 1500 }, shockMm: 20, emergenceDays: { min: 14, max: 21 },
+    optimalMonths: [9, 10, 11, 12], season: "Septiembre–diciembre",
+    temperature: { label: "Templada", minC: 12, maxC: 20, minExclusive: false },
+    note: "Variedad no incluida en la ficha original, añadida a partir del catálogo publicado por iFong. Su huésped real (avet, abeto) no distingue todavía de Pinos en el catálogo de árboles; se agrupa ahí hasta ampliar esa taxonomía. La ventana de humedad se mantiene compartida entre las tres variedades de rovelló hasta tener datos propios por especie."
   },
   {
     id: "cep", name: "Cep", scientificName: "Boletus edulis",

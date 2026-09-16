@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { translateText, metadataFor, SEO_CA, SEO_DESCRIPTIONS, SPECIES_NAMES_ES, coverDescription, analyzeHumidity, previousDates } = require('../app.js');
 const { MUSHROOMS } = require('../mushrooms.js');
 
-test('las diez fichas tienen nombres castellanos y contenido editorial en ambos idiomas', () => {
+test('las doce fichas tienen nombres castellanos y contenido editorial en ambos idiomas', () => {
   for (const item of MUSHROOMS) {
     assert.equal(translateText(item.name, 'es'), SPECIES_NAMES_ES[item.id]);
     assert.equal(translateText(item.name, 'ca'), item.name);
@@ -12,7 +12,7 @@ test('las diez fichas tienen nombres castellanos y contenido editorial en ambos 
       assert.ok(count >= 60 && count <= 80, `${item.id}: ${count} palabras`);
     }
   }
-  assert.equal(translateText('Rovelló/Pinetell', 'es'), 'Níscalo/Robellón');
+  assert.equal(translateText('Rovelló (Pinetell)', 'es'), 'Níscalo (Pinetell)');
 });
 
 test('traduce mensajes compuestos sin mezclar suelo, árboles ni niveles', () => {
@@ -24,10 +24,10 @@ test('traduce mensajes compuestos sin mezclar suelo, árboles ni niveles', () =>
 });
 
 test('metadatos usan la especie, el lugar actual y el idioma sin alterar el motor', () => {
-  const es = metadataFor('Níscalo/Robellón', 'Vielha', 'es');
-  const ca = metadataFor('Rovelló/Pinetell', 'Vielha', 'ca');
-  assert.equal(es.title, '¿Hay Níscalo/Robellón en Vielha? Predicción y hábitat | BoletApp');
-  assert.equal(ca.title, 'Hi ha Rovelló/Pinetell a Vielha? Predicció i hàbitat | BoletApp');
+  const es = metadataFor('Níscalo (Pinetell)', 'Vielha', 'es');
+  const ca = metadataFor('Rovelló (Pinetell)', 'Vielha', 'ca');
+  assert.equal(es.title, '¿Hay Níscalo (Pinetell) en Vielha? Predicción y hábitat | BoletApp');
+  assert.equal(ca.title, 'Hi ha Rovelló (Pinetell) a Vielha? Predicció i hàbitat | BoletApp');
   assert.match(ca.description, /calendari de 28 dies/);
   const days = previousDates(new Date('2026-11-01T12:00:00Z')).map((date, i) => ({ date, rainMm: i === 8 ? 22 : 2, meanC: 16, maxC: 20, humidityPct: 80 }));
   const result = analyzeHumidity(MUSHROOMS[0], days, undefined, new Date('2026-11-01T12:00:00Z'));

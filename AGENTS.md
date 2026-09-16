@@ -6,7 +6,7 @@ El nombre oficial es **Buscador de Setas en Cataluña**. Web estática móvil, s
 
 - `index.html`: estructura accesible, selector, mapa, resultados y `#adsense-container`.
 - `styles.css`: estilos adaptables y estados Baja, Media, Alta y Sin evaluar.
-- `mushrooms.js`: diez especies V1, unidades, umbrales y procedencia.
+- `mushrooms.js`: doce especies V1 (incluye tres variedades de rovelló separadas desde v1.2.0), unidades, umbrales y procedencia.
 - `app.js`: Leaflet/OpenStreetMap, Open-Meteo, ICGC y algoritmo de humedad.
 - `tests/`: regresiones del algoritmo, normalización, traducciones y metadatos.
 
@@ -20,7 +20,7 @@ Para GitHub Pages publica la raíz de la rama elegida. En Vercel selecciona proy
 
 Usa dos espacios, punto y coma, `const`, funciones `camelCase` e identificadores `kebab-case`. Separa datos, lógica y presentación. Mantén las traducciones ES/CA en `app.js`, sin traducir identificadores del catálogo ni respuestas usadas por el motor. Los temas usan variables CSS; el filtro oscuro afecta solo a las teselas. Inserta respuestas externas con `textContent`, nunca HTML sin sanear.
 
-Los valores numéricos proceden del propietario; su atribución bibliográfica a Ramon Pascual y Enric Gràcia está pendiente de páginas verificables. No presentes esta heurística como probabilidad científica. Mantén exactamente diez fichas y documenta agrupaciones taxonómicas.
+Los valores numéricos proceden del propietario; su atribución bibliográfica a Ramon Pascual y Enric Gràcia está pendiente de páginas verificables. No presentes esta heurística como probabilidad científica. Mantén exactamente doce fichas y documenta agrupaciones taxonómicas. Las tres variedades de rovelló (pinetell, esclatasangs, pi negre i avet) comparten ventana de humedad hasta tener datos propios por especie; su suelo se separó usando la tabla pública de iFong como referencia cruzada, documentado en el `note` de cada ficha.
 
 ## Integraciones y algoritmo
 
