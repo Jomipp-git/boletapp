@@ -15,7 +15,7 @@ El nombre oficial es **Buscador de Setas en Cataluña**. Web estática móvil, s
 
 Ejecuta `python3 -m http.server 8000` y abre `http://localhost:8000`. Verifica sintaxis con `node --check app.js` y `node --check mushrooms.js`; ejecuta `node --test tests/*.test.cjs`.
 
-Para GitHub Pages publica la raíz de la rama elegida. En Vercel selecciona proyecto estático (`Other`), sin comando de compilación y salida `.`. Conserva rutas relativas para funcionar bajo un subdirectorio. No hay framework ni build. El único componente de servidor es `proxy/` (opcional y desplegado aparte): **en el repositorio no va ninguna clave**, ni siquiera en `wrangler.toml`, donde solo hay la lista de orígenes permitidos.
+Para GitHub Pages publica la raíz de la rama elegida. En Vercel selecciona proyecto estático (`Other`), sin comando de compilación y salida `.`. Conserva rutas relativas para funcionar bajo un subdirectorio. No hay framework ni build. El único componente de servidor es `proxy/` (desplegado aparte en Supabase): **en el repositorio no va ninguna clave**. La clave de Meteocat y la lista de orígenes permitidos viven como secretos del proyecto de Supabase (`supabase secrets set`), nunca en un archivo versionado.
 
 ## Estilo y datos
 

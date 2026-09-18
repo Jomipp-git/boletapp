@@ -12,6 +12,17 @@ La web nunca ve la clave.
   consultar cuántas llamadas reales estás haciendo (ver la consulta al final de
   `cache-table.sql`).
 
+## Estado
+
+Desplegado en el proyecto `neiceocnlvthancpmdyb`:
+`https://neiceocnlvthancpmdyb.supabase.co/functions/v1/meteocat`
+
+## Estructura
+
+La CLI de Supabase solo reconoce funciones dentro de una carpeta llamada literalmente
+`supabase/functions/<nombre>/index.ts`; por eso el código vive en `supabase/functions/meteocat/`
+y no directamente en `proxy/`.
+
 ## Desplegarlo (una sola vez)
 
 Necesitas un proyecto de Supabase. El login abre el navegador: la clave y las credenciales no
@@ -43,11 +54,15 @@ La URL queda en `https://<tu-project-ref>.supabase.co/functions/v1/meteocat`.
 
 ```bash
 curl -i -H "Origin: http://localhost:8000" \
-  "https://<tu-project-ref>.supabase.co/functions/v1/meteocat/xema/v1/estacions/metadades?estat=ope&data=2026-09-17Z"
+  "https://neiceocnlvthancpmdyb.supabase.co/functions/v1/meteocat/xema/v1/estacions/metadades?estat=ope&data=2026-09-17Z"
 ```
 
 Debe devolver `200`, la lista de estaciones y `X-Proxy-Cache: MISS`. Si repites la llamada,
 `HIT`: eso confirma que la caché funciona y que no estás gastando cuota dos veces.
+
+Las otras dos defensas se comprueban igual: con `Origin: https://otra.web` la respuesta no trae
+cabecera `Access-Control-Allow-Origin`, y una ruta fuera de `/xema/v1/` (por ejemplo `/xdde/v1/…`)
+devuelve `403`.
 
 ## Qué permite y qué no
 

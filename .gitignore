@@ -1,1 +1,3 @@
 .DS_Store
+# Estado local de la CLI de Supabase (referencia del proyecto enlazado, versiones). No es código.
+proxy/supabase/.temp/
