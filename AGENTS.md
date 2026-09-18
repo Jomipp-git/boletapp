@@ -9,7 +9,7 @@ El nombre oficial es **Buscador de Setas en Cataluña**. Web estática móvil, s
 - `mushrooms.js`: doce especies V1 (tres variedades de rovelló separadas desde v1.2.0), unidades, umbrales y procedencia.
 - `app.js`: Leaflet/OpenStreetMap, Open-Meteo, WFS de hàbitats de la Generalitat y algoritmo de humedad.
 - `tests/`: regresiones del algoritmo, normalización, traducciones y metadatos.
-- `proxy/`: Cloudflare Worker que guarda la clave de Meteocat y cachea sus respuestas. Es la única pieza que no es estática; la web sigue sin secretos.
+- `proxy/`: Supabase Edge Function que guarda la clave de Meteocat y cachea sus respuestas en Postgres. Es la única pieza que no es estática; la web sigue sin secretos.
 
 ## Desarrollo y hosting
 
