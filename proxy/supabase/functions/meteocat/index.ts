@@ -17,8 +17,27 @@ const UPSTREAM = "https://api.meteo.cat";
 // Solo XEMA (estaciones). Deja fuera XDDE y predicción: si alguien encuentra la URL de la
 // función, no puede usarla como proxy general de Meteocat.
 const ALLOWED_PREFIX = "/xema/v1/";
-const CACHE_SECONDS = 1800;
-const PRUNE_AFTER_HOURS = 48;
+const HOUR = 3600;
+// La cuota es mensual (750 consultas), así que lo que manda no es la frescura sino no gastarla.
+// Los estadísticos diarios se publican una vez al día: pedirlos cada media hora no aporta nada.
+const CACHE_DEFAULT = HOUR / 2;
+const CACHE_METADATA = 7 * 24 * HOUR;   // el listado de estaciones se mueve muy de tarde en tarde
+const CACHE_CURRENT_MONTH = 6 * HOUR;   // el mes en curso gana un día nuevo cada día
+const CACHE_CLOSED_MONTH = 30 * 24 * HOUR; // un mes ya cerrado no va a cambiar
+const PRUNE_AFTER_HOURS = 35 * 24;      // por encima de la caché más larga, o la borraría
+
+function cacheSeconds(path: string, search: string): number {
+  if (path.startsWith("/xema/v1/estacions/metadades")) return CACHE_METADATA;
+  if (!path.startsWith("/xema/v1/variables/estadistics/diaris/")) return CACHE_DEFAULT;
+  const params = new URLSearchParams(search);
+  const year = Number(params.get("any"));
+  const month = Number(params.get("mes"));
+  if (!Number.isInteger(year) || !Number.isInteger(month)) return CACHE_DEFAULT;
+  const now = new Date();
+  const closed = year < now.getUTCFullYear() ||
+    (year === now.getUTCFullYear() && month < now.getUTCMonth() + 1);
+  return closed ? CACHE_CLOSED_MONTH : CACHE_CURRENT_MONTH;
+}
 
 const admin = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -62,8 +81,9 @@ Deno.serve(async (request) => {
     .eq("url", target)
     .maybeSingle();
 
-  if (hit && Date.now() - new Date(hit.fetched_at).getTime() < CACHE_SECONDS * 1000) {
-    return json(hit.body, 200, { ...headers, "X-Proxy-Cache": "HIT" });
+  const ttl = cacheSeconds(path, incoming.search);
+  if (hit && Date.now() - new Date(hit.fetched_at).getTime() < ttl * 1000) {
+    return json(hit.body, 200, { ...headers, "X-Proxy-Cache": "HIT", "X-Proxy-Cache-Ttl": String(ttl) });
   }
 
   const upstream = await fetch(UPSTREAM + target, {
@@ -79,5 +99,5 @@ Deno.serve(async (request) => {
       .lt("fetched_at", new Date(Date.now() - PRUNE_AFTER_HOURS * 3600 * 1000).toISOString());
   }
 
-  return json(body, upstream.status, { ...headers, "X-Proxy-Cache": "MISS" });
+  return json(body, upstream.status, { ...headers, "X-Proxy-Cache": "MISS", "X-Proxy-Cache-Ttl": String(ttl) });
 });

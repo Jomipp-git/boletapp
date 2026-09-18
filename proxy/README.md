@@ -69,7 +69,16 @@ devuelve `403`.
 - Solo `GET` y solo rutas bajo `/xema/v1/`: deja fuera los planes de XDDE y predicción.
 - Solo devuelve cabecera CORS a los orígenes de `ALLOWED_ORIGINS`; desde otra web, el navegador
   bloquea la respuesta. Si cambias de dominio, actualiza el secreto y redespliega.
-- Cachea 30 minutos y **solo respuestas correctas**: un 429 o un 500 no se cachean.
+- Cachea **solo respuestas correctas**: un 429 o un 500 no se cachean.
+- La caché dura según lo que cambie el dato, no un plazo único: 7 días el listado de estaciones,
+  6 horas el mes en curso (gana un día cada día), 30 días un mes ya cerrado (no va a cambiar) y
+  30 minutos cualquier otra ruta. La cabecera `X-Proxy-Cache-Ttl` dice cuál se aplicó.
+- Esto es lo que protege la cuota: los ficheros mensuales son idénticos para todos los usuarios,
+  así que el gasto no crece con las visitas. Para ver cuánta cuota queda:
+
+```bash
+curl -s -H "X-Api-Key: <tu-clave>" https://api.meteo.cat/quotes/v1/consum-actual
+```
 - Limpia sola las filas de más de 48 horas, para que la tabla no crezca indefinidamente.
 
 ## Si algún día se filtra la clave

@@ -30,6 +30,19 @@ const SERVICES = Object.freeze({
   // Contexto informativo aparte del cálculo; nunca cambia el nivel de la estimación.
   gbif: "https://api.gbif.org/v1/occurrence/search",
   gbifRadiusKm: 15,
+  // Proxy propio de la XEMA del Meteocat (ver proxy/): guarda la clave y cachea las respuestas.
+  // Solo se usa para la LLUVIA. Medido sobre 60 estaciones y 28 días de otoño de 2025, el
+  // error diario de lluvia baja de 1,29 mm (modelo) a 0,50 mm (3 estaciones interpoladas),
+  // un 61 % menos; en cambio para temperatura media y humedad el modelo gana, porque son
+  // campos suaves que Open-Meteo ya corrige por altitud. Por eso solo se sustituye la lluvia.
+  meteocat: "https://neiceocnlvthancpmdyb.supabase.co/functions/v1/meteocat",
+  // Código XEMA de "Precipitació acumulada diària" (mm).
+  meteocatRainVariable: 1300,
+  // Una estación a 30 km sigue describiendo la lluvia de un punto mejor que el modelo en ese
+  // mismo punto (medido: 13,5 mm frente a 14,6 mm de error en sumas de 14 días). Más allá la
+  // ventaja se pierde y se vuelve a Open-Meteo.
+  meteocatMaxKm: 30,
+  meteocatStations: 3,
   timeoutMs: 20000,
   cacheMs: 15 * 60 * 1000
 });
@@ -102,6 +115,111 @@ function normalizeWeather(payload, expectedDates) {
     };
   });
   return { days, elevationM: finite(payload.elevation) ? payload.elevation : null };
+}
+
+// ---- Lluvia medida (XEMA del Meteocat), a través del proxy ----------------------------------
+
+function stationsUrl(lastDate, base = SERVICES.meteocat) {
+  return `${base}/xema/v1/estacions/metadades?${new URLSearchParams({ estat: "ope", data: `${lastDate}Z` })}`;
+}
+
+// Un único fichero por mes trae los 28 días de TODAS las estaciones, así que la consulta no
+// depende del punto ni del usuario: el proxy la cachea una vez y sirve a todo el mundo.
+function dailyRainUrl(year, month, base = SERVICES.meteocat) {
+  const variable = SERVICES.meteocatRainVariable;
+  return `${base}/xema/v1/variables/estadistics/diaris/${variable}?${new URLSearchParams({ any: String(year), mes: String(month).padStart(2, "0") })}`;
+}
+
+function normalizeStations(payload) {
+  if (!Array.isArray(payload)) throw new Error("Listado de estaciones no reconocido.");
+  return payload.flatMap((item) => {
+    const lat = item?.coordenades?.latitud;
+    const lng = item?.coordenades?.longitud;
+    if (typeof item?.codi !== "string" || !finite(lat) || !finite(lng)) return [];
+    return [{ code: item.codi, name: typeof item.nom === "string" ? item.nom : item.codi,
+      lat, lng, altitudeM: finite(item.altitud) ? item.altitud : null }];
+  });
+}
+
+// Solo se acepta el día con percentatge === 100: la XEMA marca así los días con la serie
+// completa. Un día a medias infravalora la lluvia y eso es justo el error que se quiere evitar.
+function normalizeDailyRain(payloads) {
+  const byStation = new Map();
+  for (const payload of payloads) {
+    if (!Array.isArray(payload)) continue;
+    for (const row of payload) {
+      if (typeof row?.codiEstacio !== "string" || !Array.isArray(row?.valors)) continue;
+      if (!byStation.has(row.codiEstacio)) byStation.set(row.codiEstacio, new Map());
+      const days = byStation.get(row.codiEstacio);
+      for (const entry of row.valors) {
+        if (entry?.percentatge !== 100 || !finite(entry?.valor) || entry.valor < 0) continue;
+        if (typeof entry?.data !== "string") continue;
+        days.set(entry.data.slice(0, 10), entry.valor);
+      }
+    }
+  }
+  return byStation;
+}
+
+function distanceKm(aLat, aLng, bLat, bLng) {
+  const rad = Math.PI / 180;
+  return 6371 * Math.hypot(
+    (bLng - aLng) * rad * Math.cos((aLat + bLat) / 2 * rad),
+    (bLat - aLat) * rad);
+}
+
+function nearestStations(stations, lat, lng, count = SERVICES.meteocatStations) {
+  return stations
+    .map((station) => ({ ...station, distanceKm: distanceKm(lat, lng, station.lat, station.lng) }))
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, count);
+}
+
+// Distancia inversa al cuadrado. El suelo de 1 km evita que un punto encima de la estación
+// divida por cero y deje fuera a las otras dos.
+function interpolateRain(picked, date) {
+  let weighted = 0;
+  let weight = 0;
+  for (const station of picked) {
+    const value = station.days.get(date);
+    if (!finite(value)) continue;
+    const w = 1 / Math.max(station.distanceKm, 1) ** 2;
+    weighted += w * value;
+    weight += w;
+  }
+  return weight > 0 ? weighted / weight : null;
+}
+
+/**
+ * Sustituye la lluvia estimada por la medida, y solo si se puede hacer entera.
+ *
+ * Si falta un solo día, se devuelve el histórico de Open-Meteo sin tocar: mezclar día a día
+ * dos fuentes que miden distinto produciría escalones artificiales en el acumulado de 14 días,
+ * que es justo lo que dispara el shock.
+ *
+ * Aviso de precisión: la XEMA acumula el día en horario UTC y Open-Meteo en horario local, así
+ * que el reparto entre dos días consecutivos puede diferir en las 2 horas de desfase. Afecta al
+ * borde de un episodio, no al acumulado de 14 días, que es lo que usa el modelo.
+ */
+function mergeMeasuredRain(days, stations, byStation, lat, lng, limits = SERVICES) {
+  const withData = stations
+    .filter((station) => byStation.has(station.code))
+    .map((station) => ({ ...station, days: byStation.get(station.code) }));
+  const picked = nearestStations(withData, lat, lng, limits.meteocatStations);
+  if (!picked.length || picked[0].distanceKm > limits.meteocatMaxKm) {
+    return { days, measured: null };
+  }
+  const merged = [];
+  for (const day of days) {
+    const rainMm = interpolateRain(picked, day.date);
+    if (rainMm === null) return { days, measured: null };
+    merged.push({ ...day, rainMm });
+  }
+  const used = picked.filter((station) => days.some((day) => finite(station.days.get(day.date))));
+  return {
+    days: merged,
+    measured: { nearest: picked[0].name, distanceKm: picked[0].distanceKm, stations: used.length }
+  };
 }
 
 function temperatureDescription(temperature) {
@@ -429,6 +547,40 @@ function addFavorite(list, favorite) {
   return [favorite, ...list.filter((item) => item.id !== favorite.id)].slice(0, FAVORITES_LIMIT);
 }
 
+// Estaciones y ficheros mensuales de lluvia son iguales para todo el mundo y cambian una vez al
+// día, así que se piden una sola vez por sesión. El proxy los cachea además en servidor: la
+// cuota mensual del Meteocat no depende del número de visitantes.
+const meteocatSession = new Map();
+// La clave lleva el último día analizado, no solo la URL: al pasar la medianoche el fichero del
+// mes en curso necesita un día más, y con la pestaña abierta se habría quedado con el de ayer.
+function meteocatOnce(url, signal, key = url) {
+  if (!meteocatSession.has(key)) {
+    meteocatSession.set(key, fetchJson(url, signal).catch((error) => {
+      meteocatSession.delete(key);
+      throw error;
+    }));
+  }
+  return meteocatSession.get(key);
+}
+
+// La lluvia medida es una mejora, nunca un requisito: si la XEMA falla, tarda o no cubre el
+// punto, se devuelve el histórico de Open-Meteo intacto y la app sigue funcionando igual.
+async function withMeasuredRain(weather, lat, lng, dates, signal) {
+  try {
+    const months = [...new Set(dates.map((date) => date.slice(0, 7)))];
+    const [stationsPayload, ...rainPayloads] = await Promise.all([
+      meteocatOnce(stationsUrl(dates.at(-1)), signal),
+      ...months.map((month) => meteocatOnce(
+        dailyRainUrl(month.slice(0, 4), month.slice(5, 7)), signal, `${month}@${dates.at(-1)}`))
+    ]);
+    const merged = mergeMeasuredRain(
+      weather.days, normalizeStations(stationsPayload), normalizeDailyRain(rainPayloads), lat, lng);
+    return { ...weather, days: merged.days, measured: merged.measured };
+  } catch {
+    return { ...weather, measured: null };
+  }
+}
+
 async function fetchJson(url, signal, responseType = "json") {
   const controller = new AbortController();
   const cancel = () => controller.abort();
@@ -632,7 +784,7 @@ const TRANSLATIONS = Object.freeze({
   "Hábitat detectado:": "Hàbitat detectat:", "Sin cubierta disponible en este punto.": "Sense coberta disponible en aquest punt.", "Fuente: Generalitat de Catalunya · Cartografia dels hàbitats v3 (2019/2024)": "Font: Generalitat de Catalunya · Cartografia dels hàbitats v3 (2019/2024)", "Altitud aproximada del modelo:": "Altitud aproximada del model:", "no disponible": "no disponible",
   "Avistamientos históricos (GBIF)": "Observacions històriques (GBIF)", "Elige un punto para consultar avistamientos.": "Tria un punt per consultar observacions.", "Consultando avistamientos de GBIF…": "Consultant observacions de GBIF…", "Avistamientos de ": "Observacions de ", " en GBIF (radio ": " a GBIF (radi ", " km): ": " km): ", "Más reciente: ": "Més recent: ", "Ver registros en GBIF": "Veure registres a GBIF", "Son registros históricos de otros años, no confirman que haya setas ahora mismo ni en este punto exacto. No sustituyen al clima ni al hábitat en la estimación final.": "Són registres històrics d'altres anys, no confirmen que hi hagi bolets ara mateix ni en aquest punt exacte. No substitueixen el clima ni l'hàbitat en l'estimació final.", "Fuente: GBIF.org": "Font: GBIF.org", "No se pudieron consultar los avistamientos de GBIF. Vuelve a intentarlo.": "No s'han pogut consultar les observacions de GBIF. Torna-ho a provar.",
   "El clima y el hábitat se muestran por separado. La estimación final y el color del mapa bajan a Baja si el suelo o los árboles son incompatibles. La clasificación es orientativa y no confirma presencia de setas.": "El clima i l'hàbitat es mostren per separat. L'estimació final i el color del mapa baixen a Baixa si el sòl o els arbres són incompatibles. La classificació és orientativa i no confirma la presència de bolets.",
-  " — restricción biológica por hábitat incompatible": " — restricció biològica per hàbitat incompatible", "Punto ": "Punt ", " · Evaluación hasta ": " · Avaluació fins a ", "Lluvia de los últimos 14 días": "Pluja dels últims 14 dies", "Sin shock": "Sense xoc", "Fin del episodio de lluvia inicial": "Final de l'episodi de pluja inicial", "Lluvia:": "Pluja:", "Temperatura media:": "Temperatura mitjana:", "Máxima:": "Màxima:", " · 14/14 días completos. Histórico analizado: 28 días.": " · 14/14 dies complets. Historial analitzat: 28 dies.", "Estimación orientativa, sin garantía de fructificación.": "Estimació orientativa, sense garantia de fructificació.",
+  " — restricción biológica por hábitat incompatible": " — restricció biològica per hàbitat incompatible", "Punto ": "Punt ", " · Evaluación hasta ": " · Avaluació fins a ", "Lluvia de los últimos 14 días": "Pluja dels últims 14 dies", "Lluvia medida en los últimos 14 días": "Pluja mesurada en els últims 14 dies", "La lluvia es una medida real de los pluviómetros de la XEMA del Meteocat cuando hay una estación a 30 km o menos del punto (se interpolan las tres más cercanas); si no la hay, es la estimación de un modelo. El panel de resultados dice siempre cuál de las dos estás viendo. El resto de variables (temperatura, humedad, viento) vienen del modelo, que en esos campos acierta más que una estación lejana.": "La pluja és una mesura real dels pluviòmetres de la XEMA del Meteocat quan hi ha una estació a 30 km o menys del punt (s'interpolen les tres més properes); si no n'hi ha, és l'estimació d'un model. El panell de resultats diu sempre quina de les dues estàs veient. La resta de variables (temperatura, humitat, vent) vénen del model, que en aquests camps encerta més que una estació llunyana.", "Lluvia medida por la estación del Meteocat; la más cercana, ": "Pluja mesurada per l'estació del Meteocat; la més propera, ", " estaciones del Meteocat; la más cercana, ": " estacions del Meteocat; la més propera, ", "Lluvia medida por ": "Pluja mesurada per ", "Lluvia estimada por modelo meteorológico: no hay estación del Meteocat lo bastante cerca.": "Pluja estimada per model meteorològic: no hi ha cap estació del Meteocat prou a prop.", "Sin shock": "Sense xoc", "Fin del episodio de lluvia inicial": "Final de l'episodi de pluja inicial", "Lluvia:": "Pluja:", "Temperatura media:": "Temperatura mitjana:", "Máxima:": "Màxima:", " · 14/14 días completos. Histórico analizado: 28 días.": " · 14/14 dies complets. Historial analitzat: 28 dies.", "Estimación orientativa, sin garantía de fructificación.": "Estimació orientativa, sense garantia de fructificació.",
   "Se necesitan 28 días consecutivos completos de lluvia y temperatura.": "Calen 28 dies consecutius complets de pluja i temperatura.", "Episodio cancelado: cuatro días consecutivos sin lluvia y con máximas ≥25 °C.": "Episodi cancel·lat: quatre dies consecutius sense pluja i amb màximes ≥25 °C.", "Episodio detenido: más de 60 mm en siete días de incubación (regla de exceso de agua).": "Episodi aturat: més de 60 mm en set dies d'incubació (regla d'excés d'aigua).", "En incubación: día ": "En incubació: dia ", "; la ventana empieza en el día ": "; la finestra comença el dia ", "Ventana terminada: han pasado ": "Finestra acabada: han passat ", " días desde el shock.": " dies des del xoc.", "Dentro de ventana: día ": "Dins de la finestra: dia ", "Humedad favorable en ": "Humitat favorable en ", " días de incubación.": " dies d'incubació.", "Humedad horaria incompleta: estimación base limitada a Media.": "Humitat horària incompleta: estimació base limitada a Mitjana.", "Suelo seco: más de ": "Sòl sec: més de ", " días completos sin al menos ": " dies complets sense almenys ", " mm/día durante la incubación; penalización de un nivel.": " mm/dia durant la incubació; penalització d'un nivell.", "Criterio térmico cualitativo: no se aplica un umbral numérico no especificado.": "Criteri tèrmic qualitatiu: no s'aplica un llindar numèric no especificat.", "Viento fuerte (≥": "Vent fort (≥", " km/h) en ": " km/h) en ", " de ": " de ", " días de incubación: no cuentan como favorables aunque hubiera humedad.": " dies d'incubació: no compten com a favorables encara que hi hagués humitat.", " Viento máximo: ": " Vent màxim: ", " km/h.": " km/h.", "No se detecta un shock superior a ": "No es detecta cap xoc superior a ", "Fuera de temporada: mes actual ": "Fora de temporada: mes actual ", "; meses óptimos: ": "; mesos òptims: ", "Temperatura fuera de rango: media de tres días ": "Temperatura fora de rang: mitjana de tres dies ", ". Requiere ": ". Requereix ", "Restricción biológica: el suelo o la vegetación no son compatibles con esta seta.": "Restricció biològica: el sòl o la vegetació no són compatibles amb aquest bolet.",
   "Escribe un lugar para buscar.": "Escriu un lloc per cercar.", "Buscando lugar…": "Cercant el lloc…", "Espera un segundo antes de volver a buscar.": "Espera un segon abans de tornar a cercar.", "No se ha encontrado ese lugar en Cataluña. Prueba otro nombre.": "No s'ha trobat aquest lloc a Catalunya. Prova un altre nom.", "No se pudo buscar:": "No s'ha pogut cercar:", "Se ha solicitado abrir WhatsApp con el mensaje preparado. Elige a quién enviarlo.": "S'ha sol·licitat obrir WhatsApp amb el missatge preparat. Tria a qui enviar-lo.", "Selecciona un punto dentro del encuadre de Cataluña.": "Selecciona un punt dins l'enquadrament de Catalunya.", "Consultando 28 días de lluvia, temperatura y humedad…": "Consultant 28 dies de pluja, temperatura i humitat…", "No se puede evaluar el punto:": "No es pot avaluar el punt:", ". Pulsa Consultar punto para reintentar.": ". Prem Consulta el punt per tornar-ho a provar.", "La cartografia d'hàbitats no está disponible o no permite esta consulta desde el navegador. El cruce de suelo y árboles queda pendiente.": "La cartografia d'hàbitats no està disponible o no permet aquesta consulta des del navegador. L'encreuament de sòl i arbres queda pendent.",
   "No se ha podido cargar Leaflet. Puedes consultar las coordenadas y las fichas sin mapa.": "No s'ha pogut carregar Leaflet. Pots consultar les coordenades i les fitxes sense mapa.", "Usar mi ubicación GPS": "Fes servir la meva ubicació GPS", "El GPS requiere HTTPS (o localhost) y un navegador con geolocalización.": "El GPS requereix HTTPS (o localhost) i un navegador amb geolocalització.", "Buscando tu ubicación. Permite el acceso al GPS en el navegador.": "Cercant la teva ubicació. Permet l'accés al GPS al navegador.", " (precisión aproximada: ": " (precisió aproximada: ", "Tu posición GPS": "La teva posició GPS", "Ubicación GPS encontrada": "Ubicació GPS trobada", "Permiso de ubicación denegado. Puedes buscar un lugar o introducir coordenadas.": "Permís d'ubicació denegat. Pots cercar un lloc o introduir coordenades.", "No se pudo obtener tu ubicación. Comprueba el GPS y vuelve a intentarlo.": "No s'ha pogut obtenir la teva ubicació. Comprova el GPS i torna-ho a provar.", "No se han cargado algunas partes del mapa. Puedes usar las coordenadas.": "No s'han carregat algunes parts del mapa. Pots fer servir les coordenades.", "No se ha podido cargar la capa de hábitats.": "No s'ha pogut carregar la capa d'hàbitats.", "Cartografia dels hàbitats: acerca el mapa para ver las unidades.": "Cartografia dels hàbitats: apropa el mapa per veure les unitats.", "Hàbitats de Catalunya": "Hàbitats de Catalunya",
@@ -1020,7 +1172,8 @@ function initApp() {
     setText($("analysis-status"), `Punto ${state.point.lat.toFixed(4)}, ${state.point.lng.toFixed(4)} · Evaluación hasta ${days.at(-1).date}.`);
     const metrics = $("weather-metrics");
     metrics.replaceChildren();
-    [[`${number(sum(recent.map((day) => day.rainMm)))} mm`, "Lluvia de los últimos 14 días"], [analysis.shockDate || "Sin shock", "Fin del episodio de lluvia inicial"]].forEach(([value, label]) => {
+    const measured = state.weather.measured;
+    [[`${number(sum(recent.map((day) => day.rainMm)))} mm`, measured ? "Lluvia medida en los últimos 14 días" : "Lluvia de los últimos 14 días"], [analysis.shockDate || "Sin shock", "Fin del episodio de lluvia inicial"]].forEach(([value, label]) => {
       const metric = node("div", "", "metric"); metric.append(node("strong", value), node("span", label)); metrics.append(metric);
     });
     const chronologicalCalendar = calendarDays(species(), days, analysis);
@@ -1039,7 +1192,12 @@ function initApp() {
       return block;
     }));
     $("calendar-empty").hidden = true;
-    setText($("weather-period"), `${recent[0].date} a ${recent.at(-1).date} · 14/14 días completos. Histórico analizado: 28 días.`);
+    // Decir de dónde sale la lluvia, porque no siempre sale del mismo sitio: dentro del alcance
+    // de la XEMA es una medida real de pluviómetro; fuera, la estimación de un modelo.
+    const rainSource = measured
+      ? `Lluvia medida por ${measured.stations === 1 ? "la estación" : `${measured.stations} estaciones`} del Meteocat; la más cercana, ${measured.nearest}, a ${number(measured.distanceKm)} km.`
+      : "Lluvia estimada por modelo meteorológico: no hay estación del Meteocat lo bastante cerca.";
+    setText($("weather-period"), `${recent[0].date} a ${recent.at(-1).date} · 14/14 días completos. Histórico analizado: 28 días. ${rainSource}`);
     $("weather-reasons").replaceChildren(...analysis.reasons.map((reason) => node("li", reason)));
     setText($("weather-shock"), analysis.shockDate ? `Shock: ${number(analysis.shockMm)} mm en ${analysis.shockHours} h. Estimación orientativa, sin garantía de fructificación.` : "");
   }
@@ -1092,7 +1250,9 @@ function initApp() {
     async function weatherTask() {
       try {
         const cached = cache.get(key);
-        const weather = cached && Date.now() - cached.at < SERVICES.cacheMs ? cached.data : normalizeWeather(await fetchJson(weatherUrl(lat, lng), controller.signal), dates);
+        const weather = cached && Date.now() - cached.at < SERVICES.cacheMs
+          ? cached.data
+          : await withMeasuredRain(normalizeWeather(await fetchJson(weatherUrl(lat, lng), controller.signal), dates), lat, lng, dates, controller.signal);
         if (request !== state.request) return;
         cache.set(key, { at: Date.now(), data: weather });
         if (cache.size > 40) cache.delete(cache.keys().next().value);
@@ -1211,6 +1371,6 @@ function initApp() {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, habitatInfoUrl, normalizeHabitat, habitatTreeCategories, habitatSoilTypes, compareHabitat, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, estimateConfidence, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription, parseFavorites, addFavorite, favoriteId, favoriteFallbackName, cleanScientificName, sightingsUrl, normalizeSightings, sightingsViewUrl };
+  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, habitatInfoUrl, normalizeHabitat, habitatTreeCategories, habitatSoilTypes, compareHabitat, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, estimateConfidence, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription, parseFavorites, addFavorite, favoriteId, favoriteFallbackName, cleanScientificName, sightingsUrl, normalizeSightings, sightingsViewUrl, stationsUrl, dailyRainUrl, normalizeStations, normalizeDailyRain, distanceKm, nearestStations, interpolateRain, mergeMeasuredRain, SERVICES };
 }
 if (typeof document !== "undefined") initApp();

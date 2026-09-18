@@ -1,3 +1,6 @@
 .DS_Store
 # Estado local de la CLI de Supabase (referencia del proyecto enlazado, versiones). No es código.
 proxy/supabase/.temp/
+# Ajustes locales del editor/agente; launch.json sí se comparte (arranca el servidor de desarrollo).
+.claude/*
+!.claude/launch.json

@@ -7,9 +7,9 @@ El nombre oficial es **Buscador de Setas en Cataluña**. Web estática móvil, s
 - `index.html`: estructura accesible, selector, mapa, resultados y `#adsense-container`.
 - `styles.css`: estilos adaptables y estados Baja, Media, Alta y Sin evaluar.
 - `mushrooms.js`: doce especies V1 (tres variedades de rovelló separadas desde v1.2.0), unidades, umbrales y procedencia.
-- `app.js`: Leaflet/OpenStreetMap, Open-Meteo, WFS de hàbitats de la Generalitat y algoritmo de humedad.
+- `app.js`: Leaflet/OpenStreetMap, Open-Meteo, XEMA del Meteocat (vía `proxy/`), WFS de hàbitats de la Generalitat y algoritmo de humedad.
 - `tests/`: regresiones del algoritmo, normalización, traducciones y metadatos.
-- `proxy/`: Supabase Edge Function que guarda la clave de Meteocat y cachea sus respuestas en Postgres. Es la única pieza que no es estática; la web sigue sin secretos.
+- `proxy/`: Supabase Edge Function que guarda la clave de Meteocat y cachea sus respuestas en Postgres. Es la única pieza que no es estática; la web sigue sin secretos. Desplegada en `neiceocnlvthancpmdyb`. La cuota del Meteocat es **mensual** (750 consultas XEMA): la caché es lo que la protege, y como los ficheros mensuales son iguales para todos los usuarios, el gasto no crece con las visitas. Duraciones por tipo de dato, no uniformes: 7 días el listado de estaciones, 6 h el mes en curso, 30 días un mes ya cerrado.
 
 ## Desarrollo y hosting
 
@@ -26,6 +26,12 @@ Los valores numéricos proceden del propietario; su atribución bibliográfica a
 ## Integraciones y algoritmo
 
 Open-Meteo consulta 28 días completos hasta ayer en `Europe/Madrid`; muestra acumulado de 14 días. Suma lluvia y chubascos, excluyendo nieve. Rechaza huecos, nulos y unidades incorrectas. Cancela solicitudes obsoletas y conserva errores diferenciados.
+
+La lluvia —y solo la lluvia— se sustituye por la medida real de la XEMA del Meteocat (variable 1300, "Precipitació acumulada diària") cuando hay estación a 30 km o menos, interpolando las tres más cercanas por distancia inversa al cuadrado. El reparto no es arbitrario: medido sobre 60 estaciones y los 28 días de otoño de 2025 (validación *leave-one-out*, la estación diana excluida de sus propios vecinos), el error diario baja de 1,29 mm a 0,50 mm en lluvia (−61 %) y de 1,16 °C a 1,02 °C en temperatura máxima, pero **sube** en temperatura media (0,80 → 0,84 °C) y en humedad relativa (4,11 → 4,46 %). Open-Meteo ya corrige esos campos por altitud y son espacialmente suaves; la lluvia es la discontinua y la que el modelo falla. Por eso el resto de variables sigue viniendo de Open-Meteo y no se tocan.
+
+Qué mueve realmente: el 12 % de las respuestas a "¿llovió ese día?" cambian y el 9,5 % de las casillas del calendario cambian de color (3,2 % entran o salen de SHOCK), pero el veredicto agregado de tres niveles solo mejora en un 1 % neto (8 casos corregidos frente a 2 estropeados sobre 720). Es decir: mejora sobre todo lo que el usuario lee día a día, no el titular. No lo vendas como un salto de precisión del veredicto.
+
+Solo se sustituye si los 28 días están completos (`percentatge === 100` en cada uno); si falta uno, se conserva íntegro el histórico de Open-Meteo en vez de mezclar fuentes día a día, porque los escalones artificiales caerían justo sobre el acumulado de 14 días que dispara el shock. La XEMA acumula el día en UTC y Open-Meteo en horario local: el desfase de 2 h puede mover lluvia entre dos días consecutivos, lo que afecta al borde de un episodio pero no al acumulado. La app debe seguir funcionando entera si el Meteocat falla, tarda o agota cuota: es una mejora, nunca un requisito.
 
 Detecta shocks estrictamente superiores al umbral en 48–72 horas, sin reiniciar frentes continuos. Evalúa incubación, sequía, exceso semanal y estacionalidad. Los criterios térmicos y de humedad configurables son supuestos, no citas bibliográficas.
 
