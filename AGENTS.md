@@ -21,7 +21,7 @@ Para GitHub Pages publica la raíz de la rama elegida. En Vercel selecciona proy
 
 Usa dos espacios, punto y coma, `const`, funciones `camelCase` e identificadores `kebab-case`. Separa datos, lógica y presentación. Mantén las traducciones ES/CA en `app.js`, sin traducir identificadores del catálogo ni respuestas usadas por el motor. Los temas usan variables CSS; el filtro oscuro afecta solo a las teselas. Inserta respuestas externas con `textContent`, nunca HTML sin sanear.
 
-Los valores numéricos proceden del propietario; su atribución bibliográfica a Ramon Pascual y Enric Gràcia está pendiente de páginas verificables. No presentes esta heurística como probabilidad científica. Mantén exactamente doce fichas y documenta agrupaciones taxonómicas. Las tres variedades de rovelló (pinetell, esclatasangs, avet) comparten ventana de humedad hasta tener datos propios por especie; su suelo se separó usando la tabla pública de iFong como referencia cruzada, documentado en el `note` de cada ficha. El huésped del rovelló de avet es *Abies alba*, no el pino: la ficha se renombró al comprobarlo.
+Los valores numéricos proceden del propietario; su atribución bibliográfica a Ramon Pascual y Enric Gràcia sigue pendiente de páginas verificables, pero **ya no están sin contrastar**: se validaron contra datos reales y sobrevivieron (ver "Validación empírica de los umbrales"). No presentes esta heurística como probabilidad científica. Mantén exactamente doce fichas y documenta agrupaciones taxonómicas. Las tres variedades de rovelló (pinetell, esclatasangs, avet) comparten ventana de humedad hasta tener datos propios por especie; su suelo se separó usando la tabla pública de iFong como referencia cruzada, documentado en el `note` de cada ficha. El huésped del rovelló de avet es *Abies alba*, no el pino: la ficha se renombró al comprobarlo.
 
 ## Integraciones y algoritmo
 
@@ -49,10 +49,44 @@ Avistamientos históricos vienen de la API pública de GBIF (`api.gbif.org/v1/oc
 
 Los puntos guardados viven solo en `localStorage` (`boletapp-favorites`), nunca salen del navegador: son lugares de recolección, que es justo lo que un boletaire no quiere publicar. Lo que se lee de ahí se valida como cualquier respuesta externa —coordenadas finitas y dentro del encuadre, nombre recortado, duplicados fuera— porque puede estar corrupto o editado a mano; lo inválido se descarta en silencio en vez de romper el arranque. La lista tiene tope (40) para no crecer sin límite, y se pinta aunque Leaflet falle: los marcadores son lo único que depende del mapa.
 
+## Validación empírica de los umbrales (2026-09)
+
+`shockMm` y `emergenceDays` se contrastaron con 1.218 avistamientos reales de GBIF en Catalunya
+(2010–2025, septiembre a diciembre, fecha de día exacto) cruzados con la lluvia medida de la XEMA.
+**Conclusión: no se cambió ningún número, porque nada de lo que se probó los mejoró.** Eso convierte
+unos valores antes sin respaldo en unos valores puestos a prueba y no batidos. No los toques sin
+repetir este procedimiento.
+
+Diseño caso-control: control = **mismo punto y mismo día del año, en los otros años**. Sin ese
+control uno solo redescubre que en otoño llueve. Dos correcciones que hubo que hacer sobre la
+marcha, y que conviene no repetir:
+
+- Comparar milímetros absolutos mezcla el *cuándo* con el *cuánto*: un otoño lluvioso sube a la
+  vez la lluvia de todos los retardos y el número de setas, y eso fabrica "picos" falsos pegados
+  al borde de la ventana de búsqueda. Hay que normalizar cada serie por su propia media.
+- Los días 1 a 4 antes de un avistamiento son **más secos** que el control. No es biología: es que
+  nadie sale a buscar setas bajo la lluvia. Cualquier análisis que use esos retardos mide la
+  conducta del recolector, no la del hongo.
+
+Con eso corregido sí aparece señal real: la lluvia de una brotada está concentrada 17–29 días
+antes, más tarde que casi todas las ventanas del catálogo. Pero **esa señal no se convierte en
+capacidad de predecir**: desplazar todas las ventanas a la vez da como óptimo un desplazamiento de
+cero días, y las calibraciones por especie que parecían ganar en los mismos datos con que se
+eligieron se caen al probarlas en años reservados (2020–2025 ajustando solo con 2010–2019). Con el
+criterio que le importa a un usuario —mantener la tasa de avisos en balde de hoy y ver si se
+pierden menos setas— ninguna especie mejora.
+
+Techo conocido del modelo, medido en años no vistos: sensibilidad ≈ 0,43–0,53 y especificidad
+≈ 0,67. Es decir, la lluvia reciente explica una parte de la fructificación y no más. No presentes
+la app como algo más fino que eso, y no busques la mejora en afinar estos umbrales: está agotada.
+Si algún día hay que mejorar la predicción, tendrá que venir de variables que hoy no se usan.
+
 ## Validación y contribuciones
 
 Prueba límites de umbral, ventanas, cancelaciones, cambios rápidos de punto, fallos de red y móvil a 320 px. No hay cobertura mínima. Commits imperativos; propuestas con propósito, comprobaciones y capturas cuando cambie la interfaz.
 
 ## Monetización
 
-AdSense permanece vacío. Open-Meteo gratuito no admite uso comercial: antes de monetizar, configura acceso autorizado y un proxy para proteger claves. Conserva atribuciones de todos los proveedores.
+El hueco de AdSense existe en el marcado pero está **oculto** (`hidden` en `#adsense-container`, más `[hidden] { display: none !important }` en el CSS, porque `.ad-slot` usa `display: grid` y le ganaría). La decisión es deliberada y tiene orden: primero masa crítica de usuarios, después plan de pago. No lo reactives sin eso, porque el plan gratuito de Open-Meteo **no admite uso comercial** y las condiciones del Meteocat para republicar sus datos siguen sin verificar. Para reactivarlo basta quitar el `hidden`; el sitio en el orden del documento (detrás de `#seo-content`) ya está reservado y hay un test que lo comprueba. Conserva atribuciones de todos los proveedores.
+
+El mapa de calor por rejilla se descartó definitivamente (no "de momento"): su lugar lo ocupan los puntos guardados, que resuelven la misma necesidad —ver de un vistazo dónde mirar— sin estimar nada para terreno que nadie ha consultado. No lo reintroduzcas.

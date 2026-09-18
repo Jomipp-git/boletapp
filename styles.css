@@ -84,6 +84,8 @@ ul { padding-left: 1.25rem; }
 summary { cursor: pointer; font-weight: 650; min-height: 48px; }
 .method p { font-size: .875rem; color: var(--muted); }
 .ad-slot { min-height: 110px; display: grid; align-content: center; justify-items: center; border: 1px dashed #9cac9f; border-radius: .5rem; color: var(--muted); }
+/* Sin esto, el display: grid de arriba gana al hidden del navegador y el hueco se sigue viendo. */
+[hidden] { display: none !important; }
 .ad-slot span { font-size: .75rem; letter-spacing: .16em; }
 .ad-slot p { margin: .15rem; font-size: .875rem; }
 footer { border-top: 1px solid var(--line); font-size: .875rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: .75rem 2rem; justify-content: space-between; }
