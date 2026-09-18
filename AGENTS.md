@@ -40,6 +40,8 @@ Las altitudes de `mushrooms.js` se recalibraron con percentiles p5–p95 de obse
 
 Avistamientos históricos vienen de la API pública de GBIF (`api.gbif.org/v1/occurrence/search`, sin clave), filtrados por `scientificName` (limpio de anotaciones como "(grupo)"/"spp.") y `geoDistance` en un radio de 15 km sobre el punto. Depende de la especie elegida, no solo del punto: se refresca también al cambiar de seta, con su propio `AbortController` independiente de `weatherTask`/`habitatTask`. Es contexto informativo aparte; nunca cambia el nivel de la estimación final.
 
+Los puntos guardados viven solo en `localStorage` (`boletapp-favorites`), nunca salen del navegador: son lugares de recolección, que es justo lo que un boletaire no quiere publicar. Lo que se lee de ahí se valida como cualquier respuesta externa —coordenadas finitas y dentro del encuadre, nombre recortado, duplicados fuera— porque puede estar corrupto o editado a mano; lo inválido se descarta en silencio en vez de romper el arranque. La lista tiene tope (40) para no crecer sin límite, y se pinta aunque Leaflet falle: los marcadores son lo único que depende del mapa.
+
 ## Validación y contribuciones
 
 Prueba límites de umbral, ventanas, cancelaciones, cambios rápidos de punto, fallos de red y móvil a 320 px. No hay cobertura mínima. Commits imperativos; propuestas con propósito, comprobaciones y capturas cuando cambie la interfaz.

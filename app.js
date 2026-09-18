@@ -395,6 +395,40 @@ function compareHabitat(species, soil, elevationM, vegetation = null) {
   };
 }
 
+const FAVORITES_LIMIT = 40;
+const FAVORITE_NAME_MAX = 60;
+const favoriteId = (lat, lng) => `${lat.toFixed(5)},${lng.toFixed(5)}`;
+const favoriteFallbackName = (lat, lng) => `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+
+// Lo guardado en localStorage es dato externo: puede estar corrupto, editado a mano o venir de
+// una versión anterior. Se valida igual que una respuesta de red antes de pintarlo en el mapa,
+// y se descarta en silencio lo que no encaje en vez de romper el arranque.
+function parseFavorites(raw, catalanBounds) {
+  let list;
+  try { list = JSON.parse(raw); } catch { return []; }
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  const valid = [];
+  for (const item of list) {
+    const lat = Number(item?.lat);
+    const lng = Number(item?.lng);
+    if (!finite(lat) || !finite(lng)) continue;
+    if (lat < catalanBounds[0][0] || lat > catalanBounds[1][0] || lng < catalanBounds[0][1] || lng > catalanBounds[1][1]) continue;
+    const id = favoriteId(lat, lng);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const name = String(item?.name ?? "").trim().slice(0, FAVORITE_NAME_MAX);
+    valid.push({ id, lat, lng, name: name || favoriteFallbackName(lat, lng) });
+    if (valid.length >= FAVORITES_LIMIT) break;
+  }
+  return valid;
+}
+
+// El punto repetido no se duplica: se actualiza y sube al principio de la lista.
+function addFavorite(list, favorite) {
+  return [favorite, ...list.filter((item) => item.id !== favorite.id)].slice(0, FAVORITES_LIMIT);
+}
+
 async function fetchJson(url, signal, responseType = "json") {
   const controller = new AbortController();
   const cancel = () => controller.abort();
@@ -605,6 +639,10 @@ const TRANSLATIONS = Object.freeze({
   "La respuesta meteorológica tiene un formato o unidades no válidos.": "La resposta meteorològica té un format o unitats no vàlids.", "Histórico incompleto (": "Historial incomplet (", "). No se calcula una estimación con huecos.": "). No es calcula cap estimació amb buits.", "Límite de consultas alcanzado. Inténtalo más tarde.": "Límit de consultes assolit. Torna-ho a provar més tard.", "El servicio responde HTTP ": "El servei respon HTTP ", "El servicio ha tardado demasiado. Vuelve a consultar el punto.": "El servei ha trigat massa. Torna a consultar el punt.", "Respuesta de búsqueda no reconocida.": "Resposta de cerca no reconeguda.", "El lugar está fuera del área de consulta de Cataluña.": "El lloc és fora de l'àrea de consulta de Catalunya.", "Lugar encontrado": "Lloc trobat", "El enlace contiene coordenadas o una especie no válidas.": "L'enllaç conté coordenades o una espècie no vàlides.", "Para compartir, abre la web publicada o configura su URL pública en public-site-url de index.html.": "Per compartir, obre el web publicat o configura'n l'URL públic a public-site-url d'index.html.",
   "No se ha podido conectar con el servicio. Comprueba la conexión y vuelve a intentarlo.": "No s'ha pogut connectar amb el servei. Comprova la connexió i torna-ho a provar.", "El servicio devolvió datos ilegibles. Vuelve a intentarlo.": "El servei ha retornat dades il·legibles. Torna-ho a provar.",
   "Bosque de coníferas/pinos": "Bosc de coníferes/pins", "Bosque de frondosas": "Bosc de frondoses", "Bosque mixto de coníferas y frondosas": "Bosc mixt de coníferes i frondoses", "Terreno agrícola, urbano o prado": "Terreny agrícola, urbà o prat", "Cubierta sin clasificar": "Coberta sense classificar", "Clasificación orientativa:": "Classificació orientativa:", "Mixto (ácido/calcáreo)": "Mixt (àcid/calcari)", "Consultar cartografía original": "Consulta la cartografia original",
+  "Mis puntos guardados": "Els meus punts desats", "Nombre del punto (opcional)": "Nom del punt (opcional)", "Guardar este punto": "Desa aquest punt",
+  "Todavía no has guardado ningún punto.": "Encara no has desat cap punt.", "Ver": "Veure", "Quitar": "Treu",
+  "Punto guardado: ": "Punt desat: ", "Punto quitado: ": "Punt tret: ",
+  "Se guardan solo en este navegador y no se envían a ningún sitio. Si borras los datos del navegador, se pierden.": "Es desen només en aquest navegador i no s'envien enlloc. Si esborres les dades del navegador, es perden.",
   "Acercar": "Apropa", "Alejar": "Allunya", "Capas del mapa": "Capes del mapa", "colaboradores": "col·laboradors",
 });
 const translationPattern = new RegExp(Object.keys(TRANSLATIONS).sort((a, b) => b.length - a.length).map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g");
@@ -755,6 +793,55 @@ function initApp() {
     }
   });
   const bounds = [[40.5, 0.15], [42.9, 3.35]];
+  let favorites = parseFavorites(stored("boletapp-favorites") || "[]", bounds);
+  let favoritesLayer = null;
+
+  function renderFavorites() {
+    const list = $("favorites-list");
+    list.replaceChildren(...favorites.map((favorite) => {
+      const item = node("li", "", "favorite");
+      item.append(node("span", favorite.name, "favorite-name"));
+      const go = node("button", "Ver");
+      go.type = "button";
+      go.addEventListener("click", () => {
+        map?.setView([favorite.lat, favorite.lng], 14);
+        consultPoint(favorite.lat, favorite.lng, favorite.name);
+      });
+      const remove = node("button", "Quitar");
+      remove.type = "button";
+      remove.className = "ghost";
+      remove.addEventListener("click", () => {
+        favorites = favorites.filter((entry) => entry.id !== favorite.id);
+        persist("boletapp-favorites", JSON.stringify(favorites));
+        setText($("favorites-status"), `Punto quitado: ${favorite.name}`);
+        renderFavorites();
+      });
+      item.append(go, remove);
+      return item;
+    }));
+    if (!favorites.length) list.append(node("li", "Todavía no has guardado ningún punto.", "small"));
+    if (!favoritesLayer) return;
+    favoritesLayer.clearLayers();
+    for (const favorite of favorites) {
+      L.circleMarker([favorite.lat, favorite.lng], { radius: 7, weight: 2, color: "#7c3aed", fillColor: "#a78bfa", fillOpacity: 0.9 })
+        .bindTooltip(node("span", favorite.name))
+        .on("click", () => consultPoint(favorite.lat, favorite.lng, favorite.name))
+        .addTo(favoritesLayer);
+    }
+  }
+
+  $("save-point-btn").addEventListener("click", () => {
+    if (!state.point) return;
+    const { lat, lng } = state.point;
+    const typed = $("favorite-name").value.trim().slice(0, FAVORITE_NAME_MAX);
+    const name = typed || state.placeName || favoriteFallbackName(lat, lng);
+    favorites = addFavorite(favorites, { id: favoriteId(lat, lng), lat, lng, name });
+    persist("boletapp-favorites", JSON.stringify(favorites));
+    $("favorite-name").value = "";
+    setText($("favorites-status"), `Punto guardado: ${name}`);
+    renderFavorites();
+  });
+
   const names = { low: "Baja", medium: "Media", high: "Alta", unknown: "Sin evaluar" };
   const CLIMATE_DRIVER = { high: "Lluvia favorable", medium: "Lluvia justa", low: "Sin lluvia suficiente", unknown: "Sin datos de lluvia" };
   const TERRAIN_DRIVER = { optimal: "bosque y suelo compatibles", favorable: "bosque compatible", low: "bosque no compatible", unknown: "bosque sin confirmar" };
@@ -902,6 +989,7 @@ function initApp() {
   function renderResults() {
     updateMetadata();
     $("share-whatsapp-btn").disabled = !state.point;
+    $("save-point-btn").disabled = !state.point;
     renderSoil();
     renderSightings();
     const habitat = compareHabitat(species(), state.habitat, state.weather?.elevationM, state.habitat);
@@ -1041,6 +1129,7 @@ function initApp() {
     if ($("point-form").reportValidity()) consultPoint(Number($("latitude").value), Number($("longitude").value));
   });
   renderSpecies();
+  renderFavorites();
   localizeTree();
   if (!window.L) {
     setText($("map-status"), "No se ha podido cargar Leaflet. Puedes consultar las coordenadas y las fichas sin mapa.");
@@ -1109,6 +1198,8 @@ function initApp() {
   map.on("overlayadd", () => { setText($("soil-layer-status"), "Cartografia dels hàbitats: acerca el mapa para ver las unidades."); });
   map.on("overlayremove", () => { setText($("soil-layer-status"), ""); });
   L.control.layers(null, { "Hàbitats de Catalunya": habitatLayer }, { collapsed: true }).addTo(map);
+  favoritesLayer = L.layerGroup().addTo(map);
+  renderFavorites();
   map.on("click", (event) => consultPoint(event.latlng.lat, event.latlng.lng));
   $("reset-map").disabled = false;
   $("reset-map").addEventListener("click", center);
@@ -1120,6 +1211,6 @@ function initApp() {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, habitatInfoUrl, normalizeHabitat, habitatTreeCategories, habitatSoilTypes, compareHabitat, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, estimateConfidence, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription, cleanScientificName, sightingsUrl, normalizeSightings, sightingsViewUrl };
+  module.exports = { HUMIDITY_CONFIG, previousDates, weatherUrl, normalizeWeather, analyzeHumidity, habitatInfoUrl, normalizeHabitat, habitatTreeCategories, habitatSoilTypes, compareHabitat, matchVegetation, applyVegetationPenalty, treeCompatibilityText, SEO_DESCRIPTIONS, habitatBadgeState, estimateConfidence, calendarDays, geocodingUrl, firstPlace, sharedPointFromUrl, pointShareUrl, whatsappShareUrl, translateText, metadataFor, SEO_CA, SPECIES_NAMES_ES, coverDescription, parseFavorites, addFavorite, favoriteId, favoriteFallbackName, cleanScientificName, sightingsUrl, normalizeSightings, sightingsViewUrl };
 }
 if (typeof document !== "undefined") initApp();

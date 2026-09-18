@@ -58,6 +58,16 @@
             <button type="submit">Consultar punto</button>
           </form>
           <p class="small padded">Puedes usar las coordenadas sin interactuar con el mapa. El área de consulta es un encuadre aproximado de Cataluña.</p>
+          <section class="favorites padded" aria-labelledby="favorites-heading">
+            <h3 id="favorites-heading" class="small">Mis puntos guardados</h3>
+            <div class="favorites-form">
+              <input id="favorite-name" type="text" maxlength="60" placeholder="Nombre del punto (opcional)" autocomplete="off">
+              <button id="save-point-btn" type="button" disabled>Guardar este punto</button>
+            </div>
+            <p id="favorites-status" class="small" role="status"></p>
+            <ul id="favorites-list" class="favorites-list"></ul>
+            <p class="small">Se guardan solo en este navegador y no se envían a ningún sitio. Si borras los datos del navegador, se pierden.</p>
+          </section>
         </section>
         <section class="results card" aria-labelledby="result-heading">
           <div class="result-heading">

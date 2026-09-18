@@ -113,6 +113,16 @@ footer { border-top: 1px solid var(--line); font-size: .875rem; color: var(--mut
 .calendar-legend li { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr); gap: .5rem; overflow-wrap: anywhere; }
 .calendar-temperature { font-variant-numeric: tabular-nums; }
 
+.favorites { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--line); }
+.favorites h3 { margin: 0 0 .5rem; }
+.favorites-form { display: flex; flex-wrap: wrap; gap: .5rem; }
+.favorites-form input { flex: 1; min-width: 12rem; }
+.favorites-form button { flex-shrink: 0; }
+.favorites-list { list-style: none; padding: 0; margin: .6rem 0; display: grid; gap: .4rem; }
+.favorite { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: .4rem .6rem; background: var(--soft-bg); border-radius: .45rem; }
+.favorite-name { flex: 1; min-width: 8rem; font-weight: 650; overflow-wrap: anywhere; }
+.favorite button { min-height: 40px; padding: .3rem .7rem; font-size: .875rem; }
+.favorite button.ghost { background: transparent; color: var(--low); border: 1px solid currentColor; }
 .place-search { padding: 0 1rem; }
 .search-row { display: flex; gap: .5rem; }
 .search-row input { flex: 1; min-width: 0; }

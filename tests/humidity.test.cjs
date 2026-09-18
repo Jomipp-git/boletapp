@@ -630,6 +630,48 @@ test('enlace a GBIF usa el nombre científico limpio, sin coordenadas personales
   assert.equal(url.searchParams.get('q'), 'Morchella');
 });
 
+const { parseFavorites, addFavorite, favoriteId, favoriteFallbackName } = require('../app.js');
+const FAV_BOUNDS = [[40.5, 0.15], [42.9, 3.35]];
+test('puntos guardados: se valida lo que viene de localStorage como dato externo', () => {
+  // Contenido corrupto o de otra versión no puede romper el arranque.
+  assert.deepEqual(parseFavorites('no es json', FAV_BOUNDS), []);
+  assert.deepEqual(parseFavorites('{"no":"array"}', FAV_BOUNDS), []);
+  assert.deepEqual(parseFavorites('[]', FAV_BOUNDS), []);
+  // Coordenadas no numéricas o fuera del encuadre de Cataluña se descartan en silencio.
+  const sucio = JSON.stringify([
+    { lat: 42.1, lng: 1.8, name: 'Bueno' },
+    { lat: 'x', lng: 1.8, name: 'Texto' },
+    { lat: 48.8, lng: 2.3, name: 'París' },
+    { lat: 42.1, lng: 1.8, name: 'Duplicado del primero' }
+  ]);
+  const limpio = parseFavorites(sucio, FAV_BOUNDS);
+  assert.equal(limpio.length, 1);
+  assert.equal(limpio[0].name, 'Bueno');
+  // Sin nombre se cae a las coordenadas, y el nombre se recorta para no crecer sin límite.
+  const sinNombre = parseFavorites(JSON.stringify([{ lat: 42.1, lng: 1.8 }]), FAV_BOUNDS);
+  assert.equal(sinNombre[0].name, favoriteFallbackName(42.1, 1.8));
+  const largo = parseFavorites(JSON.stringify([{ lat: 42.1, lng: 1.8, name: 'x'.repeat(200) }]), FAV_BOUNDS);
+  assert.equal(largo[0].name.length, 60);
+});
+test('puntos guardados: el repetido se actualiza y sube, y la lista tiene tope', () => {
+  const uno = { id: favoriteId(42.1, 1.8), lat: 42.1, lng: 1.8, name: 'Primero' };
+  const dos = { id: favoriteId(41.5, 2.0), lat: 41.5, lng: 2.0, name: 'Segundo' };
+  assert.deepEqual(addFavorite([uno], dos).map(f => f.name), ['Segundo', 'Primero']);
+  // Mismo punto con otro nombre: no duplica, sustituye y queda el primero.
+  const renombrado = { ...uno, name: 'Renombrado' };
+  const tras = addFavorite([uno, dos], renombrado);
+  assert.equal(tras.length, 2);
+  assert.equal(tras[0].name, 'Renombrado');
+  // Tope: no crece indefinidamente en el almacenamiento del navegador.
+  let muchos = [];
+  for (let i = 0; i < 60; i++) {
+    const lat = 41 + i / 1000;
+    muchos = addFavorite(muchos, { id: favoriteId(lat, 1.8), lat, lng: 1.8, name: `P${i}` });
+  }
+  assert.equal(muchos.length, 40);
+  assert.equal(muchos[0].name, 'P59');
+});
+
 const { geocodingUrl, firstPlace } = require('../app.js');
 test('búsqueda geográfica limita a Cataluña y codifica texto sin alterar parámetros', () => {
   const url = new URL(geocodingUrl(' Vielha & Viladrau '));
